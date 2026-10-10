@@ -102,3 +102,32 @@ output "record_modified_on" {
   value       = { for k, v in cloudflare_dns_record.this : k => v.modified_on }
   description = "The RFC3339 timestamp of when the records were last modified."
 }
+
+output "zone_hold_status" {
+  value       = try(cloudflare_zone_hold.this[0].hold, null)
+  description = "Whether a Zone Hold is currently active, if zone_hold was declared."
+}
+
+output "zone_lockdown_ids" {
+  value       = { for k, v in cloudflare_zone_lockdown.this : k => v.id }
+  description = "The Zone Lockdown rule IDs keyed by the module's zone_lockdowns key."
+}
+
+output "page_rule_ids" {
+  value       = { for k, v in cloudflare_page_rule.this : k => v.id }
+  description = "The Page Rule IDs keyed by the module's page_rules key."
+}
+
+output "hostname_tls_setting_ids" {
+  value = {
+    ciphers         = { for k, v in cloudflare_hostname_tls_setting.ciphers : k => v.id }
+    min_tls_version = { for k, v in cloudflare_hostname_tls_setting.min_tls_version : k => v.id }
+    http2           = { for k, v in cloudflare_hostname_tls_setting.http2 : k => v.id }
+  }
+  description = "The hostname TLS setting IDs, keyed by setting_id then hostname."
+}
+
+output "workers_route_ids" {
+  value       = { for k, v in cloudflare_workers_route.this : k => v.id }
+  description = "The Workers Route IDs keyed by the route pattern."
+}
