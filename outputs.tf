@@ -131,3 +131,8 @@ output "workers_route_ids" {
   value       = { for k, v in cloudflare_workers_route.this : k => v.id }
   description = "The Workers Route IDs keyed by the route pattern."
 }
+
+output "worker_hostname_ids" {
+  value       = { for k, v in cloudflare_workers_custom_domain.this : k => v.id }
+  description = "The Workers Custom Domain IDs keyed by hostname."
+}
