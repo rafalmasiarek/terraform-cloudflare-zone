@@ -1114,3 +1114,44 @@ variable "worker_routes" {
     error_message = "Each worker_routes entry must define a non-empty pattern and script."
   }
 }
+
+variable "worker_hostnames" {
+  type = list(object({
+    hostname = string
+    script   = string
+  }))
+  default     = []
+  description = <<-EOT
+    Hostnames bound exclusively to a Worker script via Cloudflare Custom
+    Domains, managed with `cloudflare_workers_custom_domain`.
+
+    Unlike `worker_routes`, a custom domain is host-exclusive (no path
+    pattern) and Cloudflare provisions DNS and TLS for it automatically -
+    no separate DNS record is needed in this zone's records.
+
+    Example:
+
+    ```hcl
+    worker_hostnames = [
+      {
+        hostname = "api.example.com"
+        script   = "my-worker"
+      }
+    ]
+    ```
+  EOT
+
+  validation {
+    condition = length(var.worker_hostnames) == length(distinct([
+      for wh in var.worker_hostnames : wh.hostname
+    ]))
+    error_message = "Each worker_hostnames hostname must be unique."
+  }
+
+  validation {
+    condition = alltrue([
+      for wh in var.worker_hostnames : length(trimspace(wh.hostname)) > 0 && length(trimspace(wh.script)) > 0
+    ])
+    error_message = "Each worker_hostnames entry must define a non-empty hostname and script."
+  }
+}
