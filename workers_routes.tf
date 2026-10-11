@@ -1,6 +1,6 @@
 locals {
   workers_routes_by_key = {
-    for route in var.routes : route.pattern => route
+    for route in var.worker_routes : route.pattern => route
   }
 }
 
