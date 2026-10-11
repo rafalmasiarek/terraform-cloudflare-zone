@@ -1075,7 +1075,7 @@ variable "page_rules" {
   }
 }
 
-variable "routes" {
+variable "worker_routes" {
   type = list(object({
     pattern = string
     script  = string
@@ -1091,7 +1091,7 @@ variable "routes" {
     Example:
 
     ```hcl
-    routes = [
+    worker_routes = [
       {
         pattern = "api.example.com/*"
         script  = "my-worker"
@@ -1101,16 +1101,16 @@ variable "routes" {
   EOT
 
   validation {
-    condition = length(var.routes) == length(distinct([
-      for r in var.routes : r.pattern
+    condition = length(var.worker_routes) == length(distinct([
+      for r in var.worker_routes : r.pattern
     ]))
-    error_message = "Each routes pattern must be unique within a zone."
+    error_message = "Each worker_routes pattern must be unique within a zone."
   }
 
   validation {
     condition = alltrue([
-      for r in var.routes : length(trimspace(r.pattern)) > 0 && length(trimspace(r.script)) > 0
+      for r in var.worker_routes : length(trimspace(r.pattern)) > 0 && length(trimspace(r.script)) > 0
     ])
-    error_message = "Each routes entry must define a non-empty pattern and script."
+    error_message = "Each worker_routes entry must define a non-empty pattern and script."
   }
 }
