@@ -27,13 +27,6 @@ See [LICENSE](LICENSE) for full details.
 - Rafał Masiarek | [website](https://masiarek.pl) | [email](mailto:rafal@masiarek.pl) | [github](https://github.com/rafalmasiarek)
 
 
-## Submodules
-
-Submodules included to root module that can be called independent:
-
-- [single-record](https://github.com/Infrastrukturait/terraform-cloudflare-zone/tree/main/modules/single-record) - **Deprecated**, use the root module's `manage_zone = false` + `record` inputs instead. Was a small sub-module to facilitate the creation of a single record on an existing zone, without creating/owning the zone itself.
-
-
 ## Notes
 
 * The `name` and the `data.name` argument values default to `@` (root). This is actually the default behavior, but only for the value of the `data.name` argument when you are not using the module.
@@ -43,7 +36,7 @@ Submodules included to root module that can be called independent:
 * The `proxied` argument value defaults to `false`. This is actually the default behavior. You must explicitly set this argument value to `true` for the records that you want to proxy through Cloudflare.
 * The `proxied` argument value is forced to `false` for unsupported record types, regardless of explicitly set value.
 * The `proxied` argument value is forced to `false` for wildcard records for non-enterprise plans, regardless of explicitly set value, because non-enterprise customers can create but not proxy wildcard records.
-* To attach records/settings to a zone this module doesn't own, set `manage_zone = false` — the module looks up the existing zone by name instead of creating it. Combine with the `record` input (a single, flat record — no list wrapping) for the common case of adding just one record. The [single-record](https://github.com/Infrastrukturait/terraform-cloudflare-zone/tree/main/modules/single-record) submodule is **deprecated** in favor of this; it predates `manage_zone`/`record` and only supports one record with no name/TXT normalization.
+* To attach records/settings to a zone this module doesn't own, set `manage_zone = false` — the module looks up the existing zone by name instead of creating it. Combine with the `record` input (a single, flat record — no list wrapping) for the common case of adding just one record. This replaces the old `single-record` submodule, which has been removed (it predated `manage_zone`/`record`, supported only one record, and had no name/TXT normalization).
 
 ## Cloudflare provider v5 resource naming
 

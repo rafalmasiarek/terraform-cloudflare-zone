@@ -12,7 +12,6 @@
     "Terraform module to provision a CloudFlare zone with DNS record managment"
   ],
   "includes": [
-    "docs/submodules.md",
     "docs/notes.md",
     "docs/terraform.md",
     "docs/import.md"
