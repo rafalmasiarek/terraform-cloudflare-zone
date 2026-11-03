@@ -107,29 +107,6 @@ module "zone" {
           }
         }
       ]
-    },
-    {
-      key   = "cors-assets-img"
-      name  = "CORS on /assets/img/"
-      kind  = "zone"
-      phase = "http_response_headers_transform"
-
-      rules = [
-        {
-          ref        = "cors-assets-img"
-          expression = "starts_with(http.request.uri.path, \"/assets/img/\")"
-          action     = "rewrite"
-
-          action_parameters = {
-            headers = {
-              "Access-Control-Allow-Origin" = {
-                operation = "set"
-                value     = "*"
-              }
-            }
-          }
-        }
-      ]
     }
   ]
 
@@ -148,6 +125,12 @@ module "zone" {
       request_headers = {
         "X-Example-Global" = { operation = "set", value = "1" }
       }
+    },
+    {
+      key         = "rewrite-legacy-blog"
+      type        = "url_rewrite"
+      match       = { path_prefix = "/blog/" }
+      url_rewrite = { path = "/news/" }
     }
   ]
 
@@ -162,9 +145,9 @@ module "zone" {
 
   lists = [
     {
-      key  = "example-net"
+      key  = "example_net"
       kind = "ip"
-      name = "example-net"
+      name = "example_net"
       items = [
         { ip = "192.0.2.1", comment = "TEST-NET-1 example" }
       ]

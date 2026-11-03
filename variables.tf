@@ -603,13 +603,16 @@ variable "rulesets" {
         }]
       }]
 
-    `action_parameters.headers` operation values: "add", "set", "remove"
-    (removing a header requires no `value`/`expression`; "add"/"set" require
-    one of them).
+    `action_parameters.headers` operation is a free-form string passed
+    through to the provider (documented values: "add", "set", "remove";
+    the API may accept others such as "prepend"/"append" for specific
+    headers, e.g. `set-cookie`). Removing a header requires no
+    `value`/`expression`; every other operation requires one of them.
 
     Limits (see https://developers.cloudflare.com/rules/transform/):
       * Free plan: max 10 active Transform Rules per zone, shared across all
-        transform phases; regex (`matches()`) requires Business plan or higher.
+        transform phases; regex (the `matches` operator) requires Business
+        plan or higher.
       * Header names starting with `cf-`/`x-cf-` cannot be modified; to
         append `set-cookie` use operation `add`, not `set`.
   EOT
@@ -706,7 +709,7 @@ variable "transform_rules" {
       * `response_headers` — phase `http_response_headers_transform` (`response_headers` payload)
       * `request_headers`  — phase `http_request_late_transform` (`request_headers` payload)
       * `url_rewrite`      — phase `http_request_transform` (`url_rewrite.path` payload)
-      * `redirect`         — phase `http_response_redirects` (`redirect.url` + optional `status_code`)
+      * `redirect`         — phase `http_request_dynamic_redirect` (`redirect.url` + optional `status_code`)
 
     `match` fields (combined with AND; omit `match` for a global rule):
       * `path`        — exact path match

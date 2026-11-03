@@ -19,7 +19,7 @@ guide](https://registry.terraform.io/providers/cloudflare/cloudflare/latest/docs
 | v4 resource | v5 status |
 |---|---|
 | `cloudflare_transform_rule` / `cloudflare_headers_transform_rule` | **removed** — use `cloudflare_ruleset` with a transform phase (this module's `rulesets` input) |
-| `cloudflare_url_forwarding` | **removed** — use `cloudflare_ruleset` with phase `http_response_redirects` |
+| `cloudflare_url_forwarding` | **removed** — use `cloudflare_ruleset` with phase `http_request_dynamic_redirect` (Single Redirects) or `http_request_redirect` (Bulk Redirects) |
 | `cloudflare_managed_headers` | renamed `cloudflare_managed_transforms` |
 | `cloudflare_custom_page` | replaced by `cloudflare_custom_pages` + `cloudflare_custom_page_asset` |
 | `cloudflare_zone_settings_override` | **removed** — one `cloudflare_zone_setting` per setting (this module's `zone_settings` input) |

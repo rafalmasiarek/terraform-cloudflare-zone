@@ -50,15 +50,24 @@ locals {
 
   all_transform_rules = concat(var.transform_rules, local.presets_expanded)
 
+  # Escapes a value for embedding in a double-quoted Rules-language string
+  # literal (backslash first, then the quote itself).
+  tr_escape_literal = { for tr in local.all_transform_rules : tr.key => {
+    for k, v in coalesce(try(tr.match, null), {}) : k => v == null ? null : replace(replace(v, "\\", "\\\\"), "\"", "\\\"")
+  } }
+
   tr_conditions = {
     for tr in local.all_transform_rules : tr.key => compact(flatten([
       for m in [try(tr.match, null)] : m == null ? [] : compact([
-        try(m.path, null) != null ? "http.request.uri.path eq \"${m.path}\"" : null,
-        try(m.path_prefix, null) != null ? "starts_with(http.request.uri.path, \"${m.path_prefix}\")" : null,
-        try(m.path_suffix, null) != null ? "ends_with(http.request.uri.path, \"${m.path_suffix}\")" : null,
-        try(m.path_regex, null) != null ? "matches(http.request.uri.path, \"${m.path_regex}\")" : null,
-        try(m.host, null) != null ? "http.host eq \"${m.host}\"" : null,
-        try(m.method, null) != null ? "http.request.method eq \"${m.method}\"" : null,
+        try(m.path, null) != null ? "http.request.uri.path eq \"${local.tr_escape_literal[tr.key]["path"]}\"" : null,
+        try(m.path_prefix, null) != null ? "starts_with(http.request.uri.path, \"${local.tr_escape_literal[tr.key]["path_prefix"]}\")" : null,
+        try(m.path_suffix, null) != null ? "ends_with(http.request.uri.path, \"${local.tr_escape_literal[tr.key]["path_suffix"]}\")" : null,
+        # Regex is embedded as-is except for the closing quote: backslash
+        # escapes are part of valid regex syntax (e.g. "\d", "\.") and must
+        # not be doubled.
+        try(m.path_regex, null) != null ? "http.request.uri.path matches \"${replace(m.path_regex, "\"", "\\\"")}\"" : null,
+        try(m.host, null) != null ? "http.host eq \"${local.tr_escape_literal[tr.key]["host"]}\"" : null,
+        try(m.method, null) != null ? "http.request.method eq \"${local.tr_escape_literal[tr.key]["method"]}\"" : null,
       ])
     ]))
   }
@@ -69,33 +78,54 @@ locals {
     response_headers = "http_response_headers_transform"
     request_headers  = "http_request_late_transform"
     url_rewrite      = "http_request_transform"
-    redirect         = "http_response_redirects"
+    redirect         = "http_request_dynamic_redirect"
   }
 
-  transform_rules_expanded = [
+  # One rule per transform_rules/preset item. Kept separate from the
+  # ruleset they end up in, because Cloudflare allows only one zone-level
+  # entry-point ruleset per phase — rules sharing a phase must live in the
+  # same cloudflare_ruleset resource (see tr_rules_by_phase below).
+  tr_rule_items = [
     for tr in local.all_transform_rules : {
-      key         = "tr-${tr.key}"
-      name        = coalesce(try(tr.name, null), "Transform rule ${tr.key}")
-      description = try(tr.description, null)
-      kind        = "zone"
-      phase       = local.tr_phase[tr.type]
-
-      rules = [{
+      phase = local.tr_phase[tr.type]
+      rule = {
         ref        = "tr-${tr.key}"
         expression = local.tr_expression[tr.key]
         action     = tr.type == "redirect" ? "redirect" : "rewrite"
 
-        action_parameters = tr.type == "redirect" ? {
-          from_value = {
-            status_code = try(tr.redirect.status_code, null)
-            target_url  = { value = tr.redirect.url }
-          }
-          } : tr.type == "url_rewrite" ? {
-          uri = { path = { value = tr.url_rewrite.path } }
-          } : {
-          headers = tr.type == "request_headers" ? tr.request_headers : tr.response_headers
-        }
-      }]
+        action_parameters = merge(
+          tr.type == "redirect" ? {
+            from_value = {
+              status_code = try(tr.redirect.status_code, null)
+              target_url  = { value = tr.redirect.url }
+            }
+          } : {},
+          tr.type == "url_rewrite" ? {
+            uri = { path = { value = tr.url_rewrite.path } }
+          } : {},
+          contains(["request_headers", "response_headers"], tr.type) ? {
+            headers = tr.type == "request_headers" ? tr.request_headers : tr.response_headers
+          } : {}
+        )
+      }
+    }
+  ]
+
+  tr_phases = distinct([for item in local.tr_rule_items : item.phase])
+
+  tr_rules_by_phase = {
+    for phase in local.tr_phases : phase => [
+      for item in local.tr_rule_items : item.rule if item.phase == phase
+    ]
+  }
+
+  transform_rules_expanded = [
+    for phase in local.tr_phases : {
+      key   = "tr-phase-${phase}"
+      name  = "Transform rules (${phase})"
+      kind  = "zone"
+      phase = phase
+      rules = local.tr_rules_by_phase[phase]
     }
   ]
 
@@ -311,6 +341,11 @@ resource "cloudflare_zone_setting" "this" {
 resource "cloudflare_ruleset" "this" {
   for_each = local.rulesets_by_key
 
+  # Rule expressions may reference custom lists (e.g. `ip.src in $office`)
+  # with no attribute-level link Terraform can see; this ensures lists are
+  # created before the rulesets that reference them.
+  depends_on = [cloudflare_list.this]
+
   zone_id    = coalesce(try(each.value.account_level, null), false) ? null : local.zone_id
   account_id = coalesce(try(each.value.account_level, null), false) ? var.account_id : null
 
@@ -422,12 +457,15 @@ resource "cloudflare_ruleset" "this" {
   ]
 }
 
-check "transform_rules_key_collision" {
+check "transform_rules_phase_collision" {
   assert {
     condition = alltrue([
-      for tr in var.transform_rules :
-      !contains([for rs in var.rulesets : rs.key], "tr-${tr.key}")
+      for phase in local.tr_phases :
+      !contains([
+        for rs in var.rulesets : rs.phase
+        if !coalesce(try(rs.account_level, null), false)
+      ], phase)
     ])
-    error_message = "transform_rules: keys must not collide with `rulesets` keys (expanded keys are prefixed with `tr-`)."
+    error_message = "transform_rules/presets generate a zone-level ruleset for a phase that a native `rulesets` entry already targets. Cloudflare allows only one zone-level entry-point ruleset per phase — consolidate all rules for that phase into a single `rulesets` entry instead of combining it with `transform_rules`/presets."
   }
 }
