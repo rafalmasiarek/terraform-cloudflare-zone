@@ -7,7 +7,7 @@
 * The `proxied` argument value defaults to `false`. This is actually the default behavior. You must explicitly set this argument value to `true` for the records that you want to proxy through Cloudflare.
 * The `proxied` argument value is forced to `false` for unsupported record types, regardless of explicitly set value.
 * The `proxied` argument value is forced to `false` for wildcard records for non-enterprise plans, regardless of explicitly set value, because non-enterprise customers can create but not proxy wildcard records.
-* To create only each record without create whole zone, you can just use simple submodule [single-record](https://github.com/Infrastrukturait/terraform-cloudflare-zone/tree/main/modules/single-record).
+* To attach records/settings to a zone this module doesn't own, set `manage_zone = false` — the module looks up the existing zone by name instead of creating it. Combine with the `record` input (a single, flat record — no list wrapping) for the common case of adding just one record. The [single-record](https://github.com/Infrastrukturait/terraform-cloudflare-zone/tree/main/modules/single-record) submodule is **deprecated** in favor of this; it predates `manage_zone`/`record` and only supports one record with no name/TXT normalization.
 
 ## Cloudflare provider v5 resource naming
 

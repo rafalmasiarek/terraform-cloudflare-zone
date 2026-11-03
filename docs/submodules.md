@@ -2,4 +2,4 @@
 
 Submodules included to root module that can be called independent:
 
-- [single-record](https://github.com/Infrastrukturait/terraform-cloudflare-zone/tree/main/modules/single-record) - Root module creates an object with a full zone and object with all records, this small sub-module is to facilitate the creation of a single record to an existing zone.
+- [single-record](https://github.com/Infrastrukturait/terraform-cloudflare-zone/tree/main/modules/single-record) - **Deprecated**, use the root module's `manage_zone = false` + `record` inputs instead. Was a small sub-module to facilitate the creation of a single record on an existing zone, without creating/owning the zone itself.

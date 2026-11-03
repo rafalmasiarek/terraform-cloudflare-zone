@@ -1,30 +1,30 @@
 output "zone_id" {
-  value       = cloudflare_zone.this.id
+  value       = local.zone_id
   description = "The zone ID."
 }
 
 output "meta" {
-  value       = cloudflare_zone.this.meta
+  value       = var.manage_zone ? cloudflare_zone.this[0].meta : data.cloudflare_zones.existing[0].result[0].meta
   description = "Map of booleans, indicating some zone statuses or flags."
 }
 
 output "name_servers" {
-  value       = cloudflare_zone.this.name_servers
+  value       = var.manage_zone ? cloudflare_zone.this[0].name_servers : data.cloudflare_zones.existing[0].result[0].name_servers
   description = "Cloudflare-assigned name servers. This is only populated for zones that use Cloudflare DNS."
 }
 
 output "status" {
-  value       = cloudflare_zone.this.status
+  value       = var.manage_zone ? cloudflare_zone.this[0].status : data.cloudflare_zones.existing[0].result[0].status
   description = "Status of the zone. Valid values: active, pending, initializing, moved."
 }
 
 output "vanity_name_servers" {
-  value       = cloudflare_zone.this.vanity_name_servers
+  value       = var.manage_zone ? cloudflare_zone.this[0].vanity_name_servers : data.cloudflare_zones.existing[0].result[0].vanity_name_servers
   description = "List of Vanity Nameservers, if set."
 }
 
 output "verification_key" {
-  value       = cloudflare_zone.this.verification_key
+  value       = var.manage_zone ? cloudflare_zone.this[0].verification_key : data.cloudflare_zones.existing[0].result[0].verification_key
   description = "Contains the TXT record value to validate domain ownership. This is only populated for zones of type partial."
 }
 
@@ -86,6 +86,11 @@ output "modified_on" {
 output "record_ids" {
   value       = { for k, v in cloudflare_dns_record.this : k => v.id }
   description = "The record IDs keyed by the module's managed record key."
+}
+
+output "record_id" {
+  value       = try(cloudflare_dns_record.single[0].id, null)
+  description = "The ID of the record created from the `record` input, when declared."
 }
 
 output "record_names" {

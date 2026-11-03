@@ -3,6 +3,9 @@
 
 [![WeSupportUkraine](https://raw.githubusercontent.com/Infrastrukturait/WeSupportUkraine/main/banner.svg)](https://github.com/Infrastrukturait/WeSupportUkraine)
 ## About
+
+**Deprecated.** Use the root module's `manage_zone = false` + `record` inputs instead — same single-record use case, plus FQDN/TXT normalization and the rest of the root module's features, with no separate module to keep in sync.
+
 Terraform module to provision a CloudFlare zone with DNS record managment
 ## License
 
