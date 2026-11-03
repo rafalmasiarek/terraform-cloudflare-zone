@@ -1434,3 +1434,46 @@ variable "worker_hostnames" {
     error_message = "Each worker_hostnames entry must define a non-empty hostname and script."
   }
 }
+
+variable "managed_transforms" {
+  type = object({
+    request  = optional(list(string))
+    response = optional(list(string))
+  })
+  default     = null
+  description = <<-EOT
+    Managed Transforms — prebuilt HTTP header adjustments, managed with
+    `cloudflare_managed_transforms`.
+
+    List the transform IDs to enable, per direction. Every listed ID is
+    applied with `enabled = true`; removing an ID from the list stops
+    managing that transform.
+
+    Valid IDs (see "Available Managed Transforms" in the docs):
+      request  e.g. "add_visitor_location_headers"
+      response e.g. "remove_x-powered-by_header"
+
+    Notes:
+      * Managed Transforms run BEFORE regular transform rules.
+      * Some transforms are plan-gated (e.g. Exposed-Credential-Check
+        response headers require Pro/Enterprise) — check the availability
+        column of the reference table.
+
+    Example:
+      managed_transforms = {
+        response = ["remove_x-powered-by_header"]
+      }
+  EOT
+
+  validation {
+    condition = var.managed_transforms == null || alltrue([
+      length(coalesce(try(var.managed_transforms.request, null), [])) == length(distinct(coalesce(try(var.managed_transforms.request, null), []))),
+      length(coalesce(try(var.managed_transforms.response, null), [])) == length(distinct(coalesce(try(var.managed_transforms.response, null), []))),
+      alltrue(flatten([
+        [for id in coalesce(try(var.managed_transforms.request, null), []) : length(trimspace(id)) > 0],
+        [for id in coalesce(try(var.managed_transforms.response, null), []) : length(trimspace(id)) > 0]
+      ]))
+    ])
+    error_message = "managed_transforms: IDs must be non-empty and unique within each direction."
+  }
+}

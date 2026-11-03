@@ -155,4 +155,8 @@ module "zone" {
     max_age            = 31536000
     include_subdomains = true
   }
+
+  managed_transforms = {
+    response = ["remove_x-powered-by_header"]
+  }
 }
