@@ -8,6 +8,27 @@ variable "zone" {
   description = "The DNS zone name which will be added, e.g. example.com."
 }
 
+variable "manage_zone" {
+  type        = bool
+  default     = true
+  description = <<-EOT
+    When `true` (default), this module creates and manages the
+    `cloudflare_zone` resource for `zone` (the module owns the zone's
+    lifecycle). When `false`, the module instead looks up an existing
+    zone named `zone` (via `cloudflare_zones`) and attaches everything
+    else — records, settings, rulesets, etc. — to it without creating
+    or destroying the zone itself.
+
+    Use `false` when the zone is owned/managed elsewhere (another team,
+    another Terraform state, manually) and you only want to manage a
+    few records or settings on it from here — see the `record` input
+    for adding a single record without the `records` list.
+
+    `paused` and `type` are ignored when `manage_zone = false`, since
+    this module does not create the zone.
+  EOT
+}
+
 variable "zone_settings" {
   type = list(object({
     setting_id = string
@@ -154,6 +175,94 @@ variable "records" {
       for i in var.records : try(i.type == "MX" ? i.priority != null : true)
     ])
     error_message = "The priority must not be null for each raw record of type \"MX\"."
+  }
+}
+
+variable "record" {
+  type = object({
+    type    = string
+    name    = optional(string)
+    value   = optional(string)
+    comment = optional(string)
+    data = optional(object({
+      algorithm      = optional(number)
+      altitude       = optional(number)
+      certificate    = optional(string)
+      content        = optional(string)
+      digest         = optional(string)
+      digest_type    = optional(number)
+      fingerprint    = optional(string)
+      flags          = optional(string)
+      key_tag        = optional(number)
+      lat_degrees    = optional(number)
+      lat_direction  = optional(string)
+      lat_minutes    = optional(number)
+      lat_seconds    = optional(number)
+      long_degrees   = optional(number)
+      long_direction = optional(string)
+      long_minutes   = optional(number)
+      long_seconds   = optional(number)
+      matching_type  = optional(number)
+      name           = optional(string)
+      order          = optional(number)
+      port           = optional(number)
+      precision_horz = optional(number)
+      precision_vert = optional(number)
+      preference     = optional(number)
+      priority       = optional(number)
+      proto          = optional(string)
+      protocol       = optional(number)
+      public_key     = optional(string)
+      regex          = optional(string)
+      replacement    = optional(string)
+      selector       = optional(number)
+      service        = optional(string)
+      size           = optional(number)
+      tag            = optional(string)
+      target         = optional(string)
+      type           = optional(number)
+      usage          = optional(number)
+      value          = optional(string)
+      weight         = optional(number)
+    }))
+    priority = optional(number)
+    ttl      = optional(number)
+    proxied  = optional(bool)
+  })
+  default     = null
+  description = <<-EOT
+    A single, flat DNS record — the non-list counterpart to `records`,
+    for the common case of adding just one record (e.g. alongside
+    `manage_zone = false` to attach one record to a zone this module
+    doesn't own). Same fields as one `records` item, minus `record_name`
+    (not needed: there's only ever one).
+
+    Example:
+      record = {
+        type  = "A"
+        name  = "bastion"
+        value = "1.2.3.4"
+      }
+  EOT
+
+  validation {
+    condition     = var.record == null ? true : (try(var.record.value, null) != null || try(var.record.data, null) != null)
+    error_message = "record: either value or data must be provided."
+  }
+
+  validation {
+    condition     = var.record == null ? true : try(var.record.ttl == null || var.record.ttl == 1 || var.record.ttl >= 60 && var.record.ttl <= 86400, true)
+    error_message = "record: ttl must be between 60 and 86400, or 1 for automatic."
+  }
+
+  validation {
+    condition     = var.record == null ? true : try(var.record.priority == null || (var.record.priority >= 0 && var.record.priority <= 65535), true)
+    error_message = "record: priority must be between 0 and 65535."
+  }
+
+  validation {
+    condition     = var.record == null ? true : try(var.record.type != "MX" || var.record.priority != null, true)
+    error_message = "record: priority must not be null when type is \"MX\"."
   }
 }
 

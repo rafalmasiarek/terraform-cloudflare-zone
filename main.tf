@@ -1,5 +1,5 @@
 locals {
-  zone_id        = cloudflare_zone.this.id
+  zone_id        = var.manage_zone ? cloudflare_zone.this[0].id : data.cloudflare_zones.existing[0].result[0].id
   global_comment = trimspace(var.comment) != "" ? var.comment : null
 
   presets_expanded = flatten([
@@ -168,7 +168,7 @@ locals {
         type     = "MX"
         name     = name
         value    = server.host
-        comment  = coalesce(try(var.mx.comment, null), local.global_comment)
+        comment  = try(var.mx.comment, null) != null ? var.mx.comment : local.global_comment
         priority = server.priority
         ttl      = try(var.mx.ttl, null)
         proxied  = false
@@ -196,7 +196,7 @@ locals {
       type     = "TXT"
       name     = try(var.spf.name, "@")
       value    = join(" ", local.spf_terms)
-      comment  = coalesce(try(var.spf.comment, null), local.global_comment)
+      comment  = try(var.spf.comment, null) != null ? var.spf.comment : local.global_comment
       priority = null
       ttl      = try(var.spf.ttl, null)
       proxied  = false
@@ -223,7 +223,7 @@ locals {
       type        = "TXT"
       name        = "_dmarc"
       value       = join(" ", local.dmarc_parts)
-      comment     = coalesce(try(var.dmarc.comment, null), local.global_comment)
+      comment     = try(var.dmarc.comment, null) != null ? var.dmarc.comment : local.global_comment
       priority    = null
       ttl         = try(var.dmarc.ttl, null)
       proxied     = false
@@ -236,7 +236,7 @@ locals {
       type        = "TXT"
       name        = "_smtp._tls"
       value       = format("v=TLSRPTv1; rua=%s", join(",", var.tlsrpt.rua))
-      comment     = coalesce(try(var.tlsrpt.comment, null), local.global_comment)
+      comment     = try(var.tlsrpt.comment, null) != null ? var.tlsrpt.comment : local.global_comment
       priority    = null
       ttl         = try(var.tlsrpt.ttl, null)
       proxied     = false
@@ -253,7 +253,7 @@ locals {
       type     = upper(cfg.type)
       name     = format("%s._domainkey", selector)
       value    = upper(cfg.type) == "TXT" ? format("v=DKIM1; k=%s; p=%s", try(cfg.key_type, "rsa"), cfg.public_key) : cfg.target
-      comment  = coalesce(try(cfg.comment, null), local.global_comment)
+      comment  = try(cfg.comment, null) != null ? cfg.comment : local.global_comment
       priority = null
       ttl      = try(cfg.ttl, null)
       proxied  = false
@@ -300,9 +300,40 @@ locals {
   all_records_by_key = {
     for record in local.all_records_normalized : record.record_name => record
   }
+
+  # Same name/value normalization as all_records_normalized above, applied
+  # directly to var.record instead of routing a single object through the
+  # list/map pipeline built for an arbitrary number of records.
+  record_normalized = var.record == null ? null : merge(var.record, {
+    name = (
+      try(var.record.name, null) == null || trimspace(var.record.name) == "" || trimspace(var.record.name) == "@"
+      ? "@"
+      : (
+        lower(trimspace(var.record.name)) == lower(var.zone) ||
+        endswith(lower(trimspace(var.record.name)), ".${lower(var.zone)}")
+        ? trimspace(var.record.name)
+        : "${trimspace(var.record.name)}.${var.zone}"
+      )
+    )
+
+    value = try(var.record.value, null) == null ? null : (
+      upper(var.record.type) != "TXT"
+      ? var.record.value
+      : (
+        can(regex("^\".*\"$", trimspace(var.record.value)))
+        ? var.record.value
+        : join(" ", [
+          for chunk in chunklist(split("", var.record.value), 255) :
+          "\"${join("", chunk)}\""
+        ])
+      )
+    )
+  })
 }
 
 resource "cloudflare_zone" "this" {
+  count = var.manage_zone ? 1 : 0
+
   account = {
     id = var.account_id
   }
@@ -310,6 +341,16 @@ resource "cloudflare_zone" "this" {
   name   = var.zone
   paused = var.paused
   type   = var.type
+}
+
+data "cloudflare_zones" "existing" {
+  count = var.manage_zone ? 0 : 1
+
+  name = var.zone
+
+  account = trimspace(var.account_id) != "" ? {
+    id = var.account_id
+  } : null
 }
 
 resource "cloudflare_zone_dnssec" "this" {
@@ -326,12 +367,28 @@ resource "cloudflare_dns_record" "this" {
   name    = coalesce(each.value.name, "@")
   type    = each.value.type
   content = each.value.value
-  comment = coalesce(try(each.value.comment, null), local.global_comment)
+  comment = try(each.value.comment, null) != null ? each.value.comment : local.global_comment
   data    = each.value.value == null ? try(each.value.data, null) : null
 
   priority = try(each.value.priority, null)
   proxied  = coalesce(try(each.value.proxied, null), false)
   ttl      = coalesce(try(each.value.ttl, null), 1)
+}
+
+resource "cloudflare_dns_record" "single" {
+  count = var.record == null ? 0 : 1
+
+  zone_id = local.zone_id
+
+  name    = coalesce(local.record_normalized.name, "@")
+  type    = local.record_normalized.type
+  content = local.record_normalized.value
+  comment = try(local.record_normalized.comment, null) != null ? local.record_normalized.comment : local.global_comment
+  data    = local.record_normalized.value == null ? try(local.record_normalized.data, null) : null
+
+  priority = try(local.record_normalized.priority, null)
+  proxied  = coalesce(try(local.record_normalized.proxied, null), false)
+  ttl      = coalesce(try(local.record_normalized.ttl, null), 1)
 }
 
 resource "cloudflare_zone_setting" "this" {
