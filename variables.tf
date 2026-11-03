@@ -532,6 +532,14 @@ variable "rulesets" {
             expression = optional(string)
           }))
         }))
+
+        headers = optional(map(object({
+          operation  = string
+          value      = optional(string)
+          expression = optional(string)
+        })))
+
+        host_header = optional(string)
       }))
 
       logging = optional(object({
@@ -566,6 +574,47 @@ variable "rulesets" {
 
     This wrapper accepts a simplified input shape and internally converts it
     to the Cloudflare provider v5 resource schema.
+
+    Transform Rules (URL rewrite, header modifications, redirects) use this
+    wrapper with `kind = "zone"` and one of these phases:
+      * `http_request_transform`           — URL rewrites (action `rewrite`, `uri.path`)
+      * `http_request_early_transform` /
+        `http_request_late_transform`      — request header modification
+      * `http_response_headers_transform`  — response header modification
+                                              (action `rewrite`, `headers`)
+    Example (CORS for a path prefix):
+      rulesets = [{
+        key   = "cors-assets-img"
+        name  = "CORS on /assets/img/"
+        kind  = "zone"
+        phase = "http_response_headers_transform"
+        rules = [{
+          ref         = "cors-assets-img"
+          expression  = "starts_with(http.request.uri.path, \"/assets/img/\")"
+          action      = "rewrite"
+          action_parameters = {
+            headers = {
+              "Access-Control-Allow-Origin" = {
+                operation = "set"
+                value     = "*"
+              }
+            }
+          }
+        }]
+      }]
+
+    `action_parameters.headers` operation is a free-form string passed
+    through to the provider (documented values: "add", "set", "remove";
+    the API may accept others such as "prepend"/"append" for specific
+    headers, e.g. `set-cookie`). Removing a header requires no
+    `value`/`expression`; every other operation requires one of them.
+
+    Limits (see https://developers.cloudflare.com/rules/transform/):
+      * Free plan: max 10 active Transform Rules per zone, shared across all
+        transform phases; regex (the `matches` operator) requires Business
+        plan or higher.
+      * Header names starting with `cf-`/`x-cf-` cannot be modified; to
+        append `set-cookie` use operation `add`, not `set`.
   EOT
 
   validation {
@@ -595,6 +644,253 @@ variable "rulesets" {
       ]
     ]))
     error_message = "Each rule must define non-empty ref and action."
+  }
+
+  validation {
+    condition = alltrue(flatten([
+      for rs in var.rulesets : [
+        for rule in try(rs.rules, []) : [
+          for name, header in coalesce(try(rule.action_parameters.headers, null), {}) :
+          header.operation == "remove" ||
+          header.value != null ||
+          header.expression != null
+        ]
+      ]
+    ]))
+    error_message = "action_parameters.headers: every header operation other than \"remove\" requires `value` or `expression`."
+  }
+}
+
+variable "transform_rules" {
+  type = object({
+    rules = optional(list(object({
+      key         = string
+      name        = optional(string)
+      description = optional(string)
+      type        = string # response_headers | request_headers | url_rewrite | redirect
+
+      match = optional(object({
+        path        = optional(string)
+        path_prefix = optional(string)
+        path_suffix = optional(string)
+        path_regex  = optional(string)
+        host        = optional(string)
+        method      = optional(string)
+      }))
+
+      response_headers = optional(map(object({
+        operation  = string
+        value      = optional(string)
+        expression = optional(string)
+      })))
+
+      request_headers = optional(map(object({
+        operation  = string
+        value      = optional(string)
+        expression = optional(string)
+      })))
+
+      url_rewrite = optional(object({
+        path = string
+      }))
+
+      redirect = optional(object({
+        url         = string
+        status_code = optional(number)
+      }))
+    })), [])
+
+    # Named, ready-made recipes that expand into the same pipeline as
+    # `rules` above — no Rules-language or `match`/`type` bookkeeping
+    # needed. `cors` and `browser_cache_static` are lists because you may
+    # want more than one (different paths, different settings); `hsts`
+    # and `security_headers` are single blocks because they are global,
+    # zone-wide headers — a zone has exactly one HSTS policy, not several.
+    presets = optional(object({
+      cors = optional(list(object({
+        key           = string
+        paths         = list(string)
+        allow_origin  = string
+        allow_methods = optional(list(string))
+        allow_headers = optional(list(string))
+      })))
+
+      hsts = optional(object({
+        max_age            = number
+        include_subdomains = optional(bool)
+        preload            = optional(bool)
+      }))
+
+      security_headers = optional(object({
+        nosniff                 = optional(bool)
+        x_frame_options         = optional(string)
+        referrer_policy         = optional(string)
+        content_security_policy = optional(string)
+      }))
+
+      browser_cache_static = optional(list(object({
+        key         = string
+        path_prefix = string
+        max_age     = number
+        immutable   = optional(bool)
+      })))
+    }))
+  })
+  default     = {}
+  description = <<-EOT
+    Simplified Transform Rules. `rules` items and expanded `presets` items
+    both become `cloudflare_ruleset` entries (kind `zone`) grouped by
+    phase — no Rules-language writing needed. For full control use the
+    `rulesets` input instead.
+
+    `rules[*].type` values and phases:
+      * `response_headers` — phase `http_response_headers_transform` (`response_headers` payload)
+      * `request_headers`  — phase `http_request_late_transform` (`request_headers` payload)
+      * `url_rewrite`      — phase `http_request_transform` (`url_rewrite.path` payload)
+      * `redirect`         — phase `http_request_dynamic_redirect` (`redirect.url` + optional `status_code`)
+
+    `rules[*].match` fields (combined with AND; omit `match` for a global rule):
+      * `path`        — exact path match
+      * `path_prefix` — starts_with
+      * `path_suffix` — ends_with
+      * `path_regex`  — regex (RE2). Requires Business plan or higher;
+        regex is NOT available for Transform Rules on Free/Pro plans.
+      * `host`        — exact host match
+      * `method`      — exact HTTP method match
+
+    `response_headers`/`request_headers` operation is a free-form string
+    passed through to the provider (documented values: "add", "set",
+    "remove"; the API may accept others such as "prepend"/"append" for
+    specific headers, e.g. `set-cookie`). Removing a header requires no
+    `value`/`expression`; every other operation requires one of them.
+
+    `presets`:
+      * `cors`                  — one or more CORS response-header blocks, one ruleset rule per path
+      * `hsts`                  — Strict-Transport-Security (global)
+      * `security_headers`      — common security response headers (global):
+          `nosniff` (default true), `x_frame_options`, `referrer_policy`, `content_security_policy`
+      * `browser_cache_static`  — one or more browser-facing Cache-Control
+        blocks per path prefix. WARNING: sets the response header seen by
+        browsers only — it does NOT change Cloudflare edge caching; use
+        the `rulesets` input with cache rules for that
+        (https://developers.cloudflare.com/rules/transform/response-header-modification/).
+
+    Limits (see https://developers.cloudflare.com/rules/transform/):
+      * Free plan: max 10 active Transform Rules per zone, shared across all
+        transform phases; regex (the `matches` operator) requires Business
+        plan or higher.
+      * Header names starting with `cf-`/`x-cf-` cannot be modified; to
+        append `set-cookie` use operation `add`, not `set`.
+
+    Example:
+      transform_rules = {
+        rules = [
+          {
+            key   = "cors-assets"
+            type  = "response_headers"
+            match = { path_prefix = "/assets/" }
+            response_headers = {
+              "Access-Control-Allow-Origin" = { operation = "set", value = "*" }
+            }
+          }
+        ]
+        presets = {
+          hsts = {
+            max_age            = 31536000
+            include_subdomains = true
+          }
+        }
+      }
+  EOT
+
+  validation {
+    condition = alltrue([
+      for tr in coalesce(var.transform_rules.rules, []) :
+      contains(["response_headers", "request_headers", "url_rewrite", "redirect"], tr.type)
+    ])
+    error_message = "transform_rules.rules: type must be one of response_headers, request_headers, url_rewrite, redirect."
+  }
+
+  validation {
+    condition = alltrue([
+      for tr in coalesce(var.transform_rules.rules, []) :
+      (
+        (tr.type == "response_headers" && tr.response_headers != null && tr.request_headers == null && tr.url_rewrite == null && tr.redirect == null) ||
+        (tr.type == "request_headers" && tr.request_headers != null && tr.response_headers == null && tr.url_rewrite == null && tr.redirect == null) ||
+        (tr.type == "url_rewrite" && tr.url_rewrite != null && tr.response_headers == null && tr.request_headers == null && tr.redirect == null) ||
+        (tr.type == "redirect" && tr.redirect != null && tr.response_headers == null && tr.request_headers == null && tr.url_rewrite == null)
+      )
+    ])
+    error_message = "transform_rules.rules: each item must define exactly the payload matching its type."
+  }
+
+  validation {
+    condition = length(coalesce(var.transform_rules.rules, [])) == length(distinct([
+      for tr in coalesce(var.transform_rules.rules, []) : tr.key
+    ]))
+    error_message = "transform_rules.rules: keys must be unique."
+  }
+
+  validation {
+    # All preset-generated keys start with "preset-" (see presets_expanded
+    # in main.tf); reserving that prefix for user-authored rule keys keeps
+    # the two namespaces from ever colliding when concatenated.
+    condition = alltrue([
+      for tr in coalesce(var.transform_rules.rules, []) : !startswith(tr.key, "preset-")
+    ])
+    error_message = "transform_rules.rules: key must not start with \"preset-\" — that prefix is reserved for generated preset rules."
+  }
+
+  validation {
+    condition = alltrue([
+      for tr in coalesce(var.transform_rules.rules, []) :
+      try(tr.match, null) == null ||
+      (try(tr.match.path, null) == null || (try(tr.match.path_prefix, null) == null && try(tr.match.path_suffix, null) == null && try(tr.match.path_regex, null) == null))
+    ])
+    error_message = "transform_rules.rules: match.path is exclusive with path_prefix/path_suffix/path_regex."
+  }
+
+  validation {
+    condition = alltrue(flatten([
+      for tr in coalesce(var.transform_rules.rules, []) : concat(
+        [for name, h in coalesce(try(tr.response_headers, null), {}) : h.operation == "remove" || h.value != null || h.expression != null],
+        [for name, h in coalesce(try(tr.request_headers, null), {}) : h.operation == "remove" || h.value != null || h.expression != null]
+      )
+    ]))
+    error_message = "transform_rules.rules: every header operation other than \"remove\" requires `value` or `expression`."
+  }
+
+  validation {
+    condition = alltrue([
+      for c in coalesce(try(var.transform_rules.presets.cors, null), []) : length(c.paths) > 0
+    ])
+    error_message = "transform_rules.presets.cors: paths must not be empty."
+  }
+
+  validation {
+    condition = length(coalesce(try(var.transform_rules.presets.cors, null), [])) == length(distinct([
+      for c in coalesce(try(var.transform_rules.presets.cors, null), []) : c.key
+    ]))
+    error_message = "transform_rules.presets.cors: keys must be unique."
+  }
+
+  validation {
+    condition     = try(var.transform_rules.presets.hsts, null) == null ? true : var.transform_rules.presets.hsts.max_age > 0
+    error_message = "transform_rules.presets.hsts: max_age must be > 0."
+  }
+
+  validation {
+    condition = alltrue([
+      for b in coalesce(try(var.transform_rules.presets.browser_cache_static, null), []) : b.max_age > 0
+    ])
+    error_message = "transform_rules.presets.browser_cache_static: max_age must be > 0."
+  }
+
+  validation {
+    condition = length(coalesce(try(var.transform_rules.presets.browser_cache_static, null), [])) == length(distinct([
+      for b in coalesce(try(var.transform_rules.presets.browser_cache_static, null), []) : b.key
+    ]))
+    error_message = "transform_rules.presets.browser_cache_static: keys must be unique."
   }
 }
 
@@ -1154,4 +1450,350 @@ variable "worker_hostnames" {
     ])
     error_message = "Each worker_hostnames entry must define a non-empty hostname and script."
   }
+}
+
+variable "managed_transforms" {
+  type = object({
+    request  = optional(list(string))
+    response = optional(list(string))
+  })
+  default     = null
+  description = <<-EOT
+    Managed Transforms — prebuilt HTTP header adjustments, managed with
+    `cloudflare_managed_transforms`.
+
+    List the transform IDs to enable, per direction. Every listed ID is
+    applied with `enabled = true`.
+
+    Valid IDs (see "Available Managed Transforms" in the docs):
+      request  e.g. "add_visitor_location_headers"
+      response e.g. "remove_x-powered-by_header"
+
+    Notes:
+      * Managed Transforms run BEFORE regular transform rules.
+      * Some transforms are plan-gated (e.g. Exposed-Credential-Check
+        response headers require Pro/Enterprise) — check the availability
+        column of the reference table.
+      * Removing an ID from a direction's list **actively disables** that
+        transform (the provider sends `enabled = false` for IDs missing
+        from the new list) — it does not just stop managing it. Omitting
+        a whole direction (leaving `request`/`response` unset) is
+        different: that direction is left untouched entirely.
+
+    Example:
+      managed_transforms = {
+        response = ["remove_x-powered-by_header"]
+      }
+  EOT
+
+  validation {
+    condition = var.managed_transforms == null || alltrue([
+      length(coalesce(try(var.managed_transforms.request, null), [])) == length(distinct(coalesce(try(var.managed_transforms.request, null), []))),
+      length(coalesce(try(var.managed_transforms.response, null), [])) == length(distinct(coalesce(try(var.managed_transforms.response, null), []))),
+      alltrue(flatten([
+        [for id in coalesce(try(var.managed_transforms.request, null), []) : length(trimspace(id)) > 0],
+        [for id in coalesce(try(var.managed_transforms.response, null), []) : length(trimspace(id)) > 0]
+      ]))
+    ])
+    error_message = "managed_transforms: IDs must be non-empty and unique within each direction."
+  }
+}
+
+variable "url_normalization" {
+  type = object({
+    scope = string
+    type  = string
+  })
+  default     = null
+  description = <<-EOT
+    URL normalization settings, managed with
+    `cloudflare_url_normalization_settings`. Available on all plans:
+    https://developers.cloudflare.com/rules/normalization/
+
+    `scope`: "incoming" | "both" | "none"
+    `type`:  "cloudflare" | "rfc3986"
+
+    Example:
+      url_normalization = {
+        scope = "incoming"
+        type  = "cloudflare"
+      }
+  EOT
+
+  validation {
+    condition     = var.url_normalization == null ? true : contains(["incoming", "both", "none"], var.url_normalization.scope)
+    error_message = "url_normalization.scope must be one of: incoming, both, none."
+  }
+
+  validation {
+    condition     = var.url_normalization == null ? true : contains(["cloudflare", "rfc3986"], var.url_normalization.type)
+    error_message = "url_normalization.type must be one of: cloudflare, rfc3986."
+  }
+}
+
+variable "lists" {
+  type = list(object({
+    key         = string
+    kind        = string # "ip" (IP list). Hostname/ASN/redirect lists are not exposed here.
+    name        = string
+    description = optional(string)
+    items = optional(list(object({
+      ip      = optional(string)
+      comment = optional(string)
+    })))
+  }))
+  default     = []
+  description = <<-EOT
+    Custom lists (`cloudflare_list`) — groups of IPs referenceable in rule
+    expressions, e.g. `ip.src in cf.list["my-list"]`.
+    Free plan limits: 1 custom list, 10,000 total items, IP lists only
+    (https://developers.cloudflare.com/waf/tools/lists/).
+
+    Only `kind = "ip"` is supported by this input. Hostname/ASN/redirect
+    lists exist in the Cloudflare API but are not exposed here.
+
+    Example:
+      lists = [
+        {
+          key  = "office"
+          kind = "ip"
+          name = "office"
+          items = [
+            { ip = "203.0.113.10", comment = "office" }
+          ]
+        }
+      ]
+  EOT
+
+  validation {
+    condition     = length(var.lists) == length(distinct([for l in var.lists : l.key]))
+    error_message = "lists: key must be unique."
+  }
+
+  validation {
+    condition     = alltrue([for l in var.lists : l.kind == "ip"])
+    error_message = "lists: only kind \"ip\" (IP lists) is supported by this input."
+  }
+
+  validation {
+    condition = alltrue(flatten([
+      for l in var.lists : [for item in coalesce(try(l.items, null), []) : item.ip != null]
+    ]))
+    error_message = "lists: every item must define `ip`."
+  }
+}
+
+variable "bot_management" {
+  type = object({
+    fight_mode                      = optional(bool)
+    sbfm_definitely_automated       = optional(string) # allow | block | managed_challenge
+    sbfm_likely_automated           = optional(string) # allow | block | managed_challenge
+    sbfm_static_resource_protection = optional(bool)
+    sbfm_verified_bots              = optional(string) # allow | block
+    content_bots_protection         = optional(string) # block | disabled
+    crawler_protection              = optional(string) # enabled | disabled
+    ai_bots_protection              = optional(string) # block | disabled | only_on_ad_pages
+    ai_training                     = optional(string) # disabled | disallow | block | only_on_ad_pages
+    ai_user                         = optional(string) # disabled | block | only_on_ad_pages
+    aisearch                        = optional(string) # disabled | block | only_on_ad_pages
+    bm_cookie_enabled               = optional(bool)
+    enable_js                       = optional(bool)
+    is_robots_txt_managed           = optional(bool)
+    optimize_wordpress              = optional(bool)
+    cf_robots_variant               = optional(string) # off | policy_only
+    jsd_api_results_enabled         = optional(bool)
+    suppress_session_score          = optional(bool)
+  })
+  default     = null
+  description = <<-EOT
+    Zone Bot Management settings (`cloudflare_bot_management`).
+    Base "Bots" is available on all plans. The `sbfm_*` fields are Super Bot
+    Fight Mode and require Pro plan or higher; full Bot Management is
+    Enterprise. See https://developers.cloudflare.com/bots/.
+
+    Example:
+      bot_management = {
+        content_bots_protection = "block"
+      }
+  EOT
+
+  validation {
+    condition = var.bot_management == null ? true : alltrue([
+      try(var.bot_management.sbfm_definitely_automated, null) == null ? true : contains(["allow", "block", "managed_challenge"], var.bot_management.sbfm_definitely_automated),
+      try(var.bot_management.sbfm_likely_automated, null) == null ? true : contains(["allow", "block", "managed_challenge"], var.bot_management.sbfm_likely_automated),
+      try(var.bot_management.sbfm_verified_bots, null) == null ? true : contains(["allow", "block"], var.bot_management.sbfm_verified_bots),
+      try(var.bot_management.content_bots_protection, null) == null ? true : contains(["block", "disabled"], var.bot_management.content_bots_protection),
+      try(var.bot_management.crawler_protection, null) == null ? true : contains(["enabled", "disabled"], var.bot_management.crawler_protection),
+      try(var.bot_management.ai_bots_protection, null) == null ? true : contains(["block", "disabled", "only_on_ad_pages"], var.bot_management.ai_bots_protection),
+      try(var.bot_management.ai_training, null) == null ? true : contains(["disabled", "disallow", "block", "only_on_ad_pages"], var.bot_management.ai_training),
+      try(var.bot_management.ai_user, null) == null ? true : contains(["disabled", "block", "only_on_ad_pages"], var.bot_management.ai_user),
+      try(var.bot_management.aisearch, null) == null ? true : contains(["disabled", "block", "only_on_ad_pages"], var.bot_management.aisearch),
+      try(var.bot_management.cf_robots_variant, null) == null ? true : contains(["off", "policy_only"], var.bot_management.cf_robots_variant),
+    ])
+    error_message = "bot_management: one or more fields have an unsupported value. See the provider docs for cloudflare_bot_management for the allowed values of each field."
+  }
+}
+
+variable "ip_access_rules" {
+  type = list(object({
+    key    = string
+    mode   = string # block | challenge | whitelist | js_challenge | managed_challenge
+    target = string # ip | ip6 | ip_range | asn (country is Enterprise-only, not supported here)
+    value  = string
+    notes  = optional(string)
+  }))
+  default     = []
+  description = <<-EOT
+    IP Access Rules (`cloudflare_access_rule`), one rule per item.
+    Available to all customers; country targeting is Enterprise-only and
+    not exposed here.
+
+    Example:
+      ip_access_rules = [
+        {
+          key    = "block-attacker"
+          mode   = "block"
+          target = "ip"
+          value  = "203.0.113.10"
+          notes  = "attacker from incident 2026-10"
+        }
+      ]
+  EOT
+
+  validation {
+    condition     = length(var.ip_access_rules) == length(distinct([for r in var.ip_access_rules : r.key]))
+    error_message = "ip_access_rules: key must be unique."
+  }
+
+  validation {
+    condition = alltrue([
+      for r in var.ip_access_rules :
+      contains(["block", "challenge", "whitelist", "js_challenge", "managed_challenge"], r.mode) &&
+      contains(["ip", "ip6", "ip_range", "asn"], r.target)
+    ])
+    error_message = "ip_access_rules: mode must be one of block, challenge, whitelist, js_challenge, managed_challenge; target must be one of ip, ip6, ip_range, asn."
+  }
+}
+
+variable "user_agent_blocking_rules" {
+  type = list(object({
+    key         = string
+    mode        = string # block | challenge | whitelist | js_challenge | managed_challenge
+    value       = string # exact user agent string to match
+    description = optional(string)
+    paused      = optional(bool)
+  }))
+  default     = []
+  description = <<-EOT
+    User Agent Blocking rules (`cloudflare_user_agent_blocking_rule`).
+    Available on all plans. Each item is one resource matching a single
+    exact user-agent string — the provider's `configuration.target` for
+    this resource only accepts "ua", there is no multi-condition list.
+
+    Example:
+      user_agent_blocking_rules = [
+        {
+          key   = "block-old-bot"
+          mode  = "block"
+          value = "BadBot/1.0"
+        }
+      ]
+  EOT
+
+  validation {
+    condition     = length(var.user_agent_blocking_rules) == length(distinct([for r in var.user_agent_blocking_rules : r.key]))
+    error_message = "user_agent_blocking_rules: key must be unique."
+  }
+
+  validation {
+    condition = alltrue([
+      for r in var.user_agent_blocking_rules :
+      contains(["block", "challenge", "whitelist", "js_challenge", "managed_challenge"], r.mode) &&
+      length(trimspace(r.value)) > 0
+    ])
+    error_message = "user_agent_blocking_rules: mode must be one of block, challenge, whitelist, js_challenge, managed_challenge; value must be non-empty."
+  }
+}
+
+variable "origin_ca_certificates" {
+  type = map(object({
+    csr                = string
+    hostnames          = list(string)
+    request_type       = string           # origin-rsa | origin-ecc | keyless-certificate
+    requested_validity = optional(number) # 7 | 30 | 90 | 365 | 730 | 1095 | 5475 (days)
+  }))
+  default     = null
+  description = <<-EOT
+    Origin CA certificates (`cloudflare_origin_ca_certificate`), keyed by
+    your own key. Available on all plans. This resource is account-scoped
+    (not tied to this module's zone) — generate the CSR off-Terraform
+    (e.g. `openssl req -new -newkey rsa:2048 -nodes`) and pass it here.
+
+    `request_type` selects the certificate's signature algorithm:
+    "origin-rsa", "origin-ecc", or "keyless-certificate" (for Keyless SSL).
+    `requested_validity` (days) must be one of 7, 30, 90, 365, 730, 1095,
+    5475 when set.
+
+    Example:
+      origin_ca_certificates = {
+        origin = {
+          csr          = file("certs/origin.csr")
+          hostnames    = ["example.com", "*.example.com"]
+          request_type = "origin-rsa"
+        }
+      }
+  EOT
+
+  validation {
+    condition = var.origin_ca_certificates == null ? true : alltrue([
+      for k, v in var.origin_ca_certificates :
+      length(trimspace(v.csr)) > 0 &&
+      length(v.hostnames) > 0 &&
+      contains(["origin-rsa", "origin-ecc", "keyless-certificate"], v.request_type) &&
+      (try(v.requested_validity, null) == null ? true : contains([7, 30, 90, 365, 730, 1095, 5475], v.requested_validity))
+    ])
+    error_message = "origin_ca_certificates: each entry needs a non-empty csr, at least one hostname, request_type in origin-rsa|origin-ecc|keyless-certificate, and (if set) requested_validity in 7|30|90|365|730|1095|5475."
+  }
+}
+
+variable "aop_certificate" {
+  type = object({
+    certificate = string
+    private_key = string
+  })
+  default     = null
+  sensitive   = true
+  description = <<-EOT
+    Zone-level Authenticated Origin Pulls certificate
+    (`cloudflare_authenticated_origin_pulls_certificate`). Enable the zone
+    setting via the existing `authenticated_origin_pulls_settings` input.
+  EOT
+}
+
+variable "aop_hostname_certificates" {
+  type = map(object({
+    certificate = string
+    private_key = string
+    hostname    = string
+    enabled     = optional(bool, true)
+  }))
+  default     = null
+  sensitive   = true
+  description = <<-EOT
+    Per-hostname Authenticated Origin Pulls certificates, keyed by your own
+    key. Uploading a certificate alone does not activate per-hostname AOP —
+    Cloudflare requires a separate association step, so each entry both
+    uploads the certificate (`cloudflare_authenticated_origin_pulls_hostname_certificate`)
+    and associates + enables it for `hostname`
+    (`cloudflare_authenticated_origin_pulls`).
+
+    Example:
+      aop_hostname_certificates = {
+        api = {
+          certificate = file("certs/api.pem")
+          private_key = file("certs/api.key")
+          hostname    = "api.example.com"
+        }
+      }
+  EOT
 }

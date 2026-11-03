@@ -109,4 +109,66 @@ module "zone" {
       ]
     }
   ]
+
+  transform_rules = {
+    rules = [
+      {
+        key  = "global-request-header"
+        type = "request_headers"
+        request_headers = {
+          "X-Example-Global" = { operation = "set", value = "1" }
+        }
+      },
+      {
+        key         = "rewrite-legacy-blog"
+        type        = "url_rewrite"
+        match       = { path_prefix = "/blog/" }
+        url_rewrite = { path = "/news/" }
+      }
+    ]
+
+    presets = {
+      cors = [
+        {
+          key          = "assets"
+          paths        = ["/assets/"]
+          allow_origin = "*"
+        }
+      ]
+
+      hsts = {
+        max_age            = 31536000
+        include_subdomains = true
+      }
+    }
+  }
+
+  managed_transforms = {
+    response = ["remove_x-powered-by_header"]
+  }
+
+  lists = [
+    {
+      key  = "example_net"
+      kind = "ip"
+      name = "example_net"
+      items = [
+        { ip = "192.0.2.1", comment = "TEST-NET-1 example" }
+      ]
+    }
+  ]
+
+  bot_management = {
+    content_bots_protection = "block"
+  }
+
+  ip_access_rules = [
+    {
+      key    = "block-testnet"
+      mode   = "block"
+      target = "ip_range"
+      value  = "192.0.2.0/24"
+      notes  = "TEST-NET-1"
+    }
+  ]
 }

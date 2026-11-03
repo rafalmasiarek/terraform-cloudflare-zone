@@ -136,3 +136,38 @@ output "worker_hostname_ids" {
   value       = { for k, v in cloudflare_workers_custom_domain.this : k => v.id }
   description = "The Workers Custom Domain IDs keyed by hostname."
 }
+
+output "list_ids" {
+  value       = { for k, v in cloudflare_list.this : k => v.id }
+  description = "The custom list IDs keyed by the module's managed list key."
+}
+
+output "ip_access_rule_ids" {
+  value       = { for k, v in cloudflare_access_rule.this : k => v.id }
+  description = "The IP access rule IDs keyed by the module's managed rule key."
+}
+
+output "user_agent_blocking_rule_ids" {
+  value       = { for k, v in cloudflare_user_agent_blocking_rule.this : k => v.id }
+  description = "The user agent blocking rule IDs keyed by the module's managed rule key."
+}
+
+output "origin_ca_certificate_ids" {
+  value       = { for k, v in cloudflare_origin_ca_certificate.this : k => v.id }
+  description = "The Origin CA certificate IDs keyed by the module's managed key."
+}
+
+output "origin_ca_certificates" {
+  value       = { for k, v in cloudflare_origin_ca_certificate.this : k => v.certificate }
+  description = "The issued Origin CA certificate PEMs keyed by the module's managed key."
+}
+
+output "aop_certificate_id" {
+  value       = try(cloudflare_authenticated_origin_pulls_certificate.this[0].id, null)
+  description = "The zone-level AOP certificate ID, when declared."
+}
+
+output "aop_hostname_certificate_ids" {
+  value       = { for k, v in cloudflare_authenticated_origin_pulls_hostname_certificate.this : k => v.id }
+  description = "The per-hostname AOP certificate IDs keyed by the module's managed key."
+}
