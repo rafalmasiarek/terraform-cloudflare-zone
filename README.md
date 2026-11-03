@@ -72,7 +72,7 @@ guide](https://registry.terraform.io/providers/cloudflare/cloudflare/latest/docs
 | Name | Version |
 |------|---------|
 | <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.5.0 |
-| <a name="requirement_cloudflare"></a> [cloudflare](#requirement\_cloudflare) | >= 5.18.0, < 6.0.0 |
+| <a name="requirement_cloudflare"></a> [cloudflare](#requirement\_cloudflare) | >= 5.28.1, < 6.0.0 |
 
 ### Modules
 
@@ -83,6 +83,7 @@ No modules.
 | Name | Type |
 |------|------|
 | [cloudflare_access_rule.this](https://registry.terraform.io/providers/cloudflare/cloudflare/latest/docs/resources/access_rule) | resource |
+| [cloudflare_authenticated_origin_pulls.this](https://registry.terraform.io/providers/cloudflare/cloudflare/latest/docs/resources/authenticated_origin_pulls) | resource |
 | [cloudflare_authenticated_origin_pulls_certificate.this](https://registry.terraform.io/providers/cloudflare/cloudflare/latest/docs/resources/authenticated_origin_pulls_certificate) | resource |
 | [cloudflare_authenticated_origin_pulls_hostname_certificate.this](https://registry.terraform.io/providers/cloudflare/cloudflare/latest/docs/resources/authenticated_origin_pulls_hostname_certificate) | resource |
 | [cloudflare_authenticated_origin_pulls_settings.this](https://registry.terraform.io/providers/cloudflare/cloudflare/latest/docs/resources/authenticated_origin_pulls_settings) | resource |
@@ -120,7 +121,7 @@ No modules.
 |------|-------------|------|---------|:--------:|
 | <a name="input_account_id"></a> [account\_id](#input\_account\_id) | Account ID to manage the zone resource in. You can get more information on how to find `account_id` at [this page](https://developers.cloudflare.com/fundamentals/get-started/basic-tasks/find-account-and-zone-ids/). | `string` | n/a | yes |
 | <a name="input_aop_certificate"></a> [aop\_certificate](#input\_aop\_certificate) | Zone-level Authenticated Origin Pulls certificate<br>(`cloudflare_authenticated_origin_pulls_certificate`). Enable the zone<br>setting via the existing `authenticated_origin_pulls_settings` input. | <pre>object({<br>    certificate = string<br>    private_key = string<br>  })</pre> | `null` | no |
-| <a name="input_aop_hostname_certificates"></a> [aop\_hostname\_certificates](#input\_aop\_hostname\_certificates) | Per-hostname Authenticated Origin Pulls certificates<br>(`cloudflare_authenticated_origin_pulls_hostname_certificate`), keyed<br>by your own key. The target hostname is derived by Cloudflare from the<br>certificate's own subject/SAN, not a separate argument. | <pre>map(object({<br>    certificate = string<br>    private_key = string<br>  }))</pre> | `null` | no |
+| <a name="input_aop_hostname_certificates"></a> [aop\_hostname\_certificates](#input\_aop\_hostname\_certificates) | Per-hostname Authenticated Origin Pulls certificates, keyed by your own<br>key. Uploading a certificate alone does not activate per-hostname AOP —<br>Cloudflare requires a separate association step, so each entry both<br>uploads the certificate (`cloudflare_authenticated_origin_pulls_hostname_certificate`)<br>and associates + enables it for `hostname`<br>(`cloudflare_authenticated_origin_pulls`).<br><br>Example:<br>  aop\_hostname\_certificates = {<br>    api = {<br>      certificate = file("certs/api.pem")<br>      private\_key = file("certs/api.key")<br>      hostname    = "api.example.com"<br>    }<br>  } | <pre>map(object({<br>    certificate = string<br>    private_key = string<br>    hostname    = string<br>    enabled     = optional(bool, true)<br>  }))</pre> | `null` | no |
 | <a name="input_authenticated_origin_pulls_settings"></a> [authenticated\_origin\_pulls\_settings](#input\_authenticated\_origin\_pulls\_settings) | Zone-level Authenticated Origin Pulls setting, managed with `cloudflare_authenticated_origin_pulls_settings`.<br><br>Example:<pre>hcl<br>authenticated_origin_pulls_settings = {<br>  enabled = true<br>}</pre> | <pre>object({<br>    enabled = optional(bool)<br>  })</pre> | `null` | no |
 | <a name="input_bot_management"></a> [bot\_management](#input\_bot\_management) | Zone Bot Management settings (`cloudflare_bot_management`).<br>Base "Bots" is available on all plans. The `sbfm_*` fields are Super Bot<br>Fight Mode and require Pro plan or higher; full Bot Management is<br>Enterprise. See https://developers.cloudflare.com/bots/.<br><br>Example:<br>  bot\_management = {<br>    content\_bots\_protection = "block"<br>  } | <pre>object({<br>    fight_mode                      = optional(bool)<br>    sbfm_definitely_automated       = optional(string) # allow | block | managed_challenge<br>    sbfm_likely_automated           = optional(string) # allow | block | managed_challenge<br>    sbfm_static_resource_protection = optional(bool)<br>    sbfm_verified_bots              = optional(string) # allow | block<br>    content_bots_protection         = optional(string) # block | disabled<br>    crawler_protection              = optional(string) # enabled | disabled<br>    ai_bots_protection              = optional(string) # block | disabled | only_on_ad_pages<br>    ai_training                     = optional(string) # disabled | disallow | block | only_on_ad_pages<br>    ai_user                         = optional(string) # disabled | block | only_on_ad_pages<br>    aisearch                        = optional(string) # disabled | block | only_on_ad_pages<br>    bm_cookie_enabled               = optional(bool)<br>    enable_js                       = optional(bool)<br>    is_robots_txt_managed           = optional(bool)<br>    optimize_wordpress              = optional(bool)<br>    cf_robots_variant               = optional(string) # off | policy_only<br>    jsd_api_results_enabled         = optional(bool)<br>    suppress_session_score          = optional(bool)<br>  })</pre> | `null` | no |
 | <a name="input_comment"></a> [comment](#input\_comment) | Optional global comment added to all DNS records that do not define their own comment. | `string` | `""` | no |
@@ -168,6 +169,7 @@ No modules.
 |------|-------------|
 | <a name="output_algorithm"></a> [algorithm](#output\_algorithm) | Zone DNSSEC algorithm. |
 | <a name="output_aop_certificate_id"></a> [aop\_certificate\_id](#output\_aop\_certificate\_id) | The zone-level AOP certificate ID, when declared. |
+| <a name="output_aop_hostname_certificate_ids"></a> [aop\_hostname\_certificate\_ids](#output\_aop\_hostname\_certificate\_ids) | The per-hostname AOP certificate IDs keyed by the module's managed key. |
 | <a name="output_digest"></a> [digest](#output\_digest) | Zone DNSSEC digest. |
 | <a name="output_digest_algorithm"></a> [digest\_algorithm](#output\_digest\_algorithm) | Digest algorithm used for Zone DNSSEC. |
 | <a name="output_digest_type"></a> [digest\_type](#output\_digest\_type) | Digest Type for the Zone DNSSEC. |
@@ -367,7 +369,7 @@ module "zone" {
     {
       key    = "block-testnet"
       mode   = "block"
-      target = "ip"
+      target = "ip_range"
       value  = "192.0.2.0/24"
       notes  = "TEST-NET-1"
     }

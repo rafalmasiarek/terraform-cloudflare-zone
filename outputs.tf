@@ -166,3 +166,8 @@ output "aop_certificate_id" {
   value       = try(cloudflare_authenticated_origin_pulls_certificate.this[0].id, null)
   description = "The zone-level AOP certificate ID, when declared."
 }
+
+output "aop_hostname_certificate_ids" {
+  value       = { for k, v in cloudflare_authenticated_origin_pulls_hostname_certificate.this : k => v.id }
+  description = "The per-hostname AOP certificate IDs keyed by the module's managed key."
+}

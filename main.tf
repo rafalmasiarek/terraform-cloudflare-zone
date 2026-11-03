@@ -89,9 +89,10 @@ locals {
     for tr in local.all_transform_rules : {
       phase = local.tr_phase[tr.type]
       rule = {
-        ref        = "tr-${tr.key}"
-        expression = local.tr_expression[tr.key]
-        action     = tr.type == "redirect" ? "redirect" : "rewrite"
+        ref         = "tr-${tr.key}"
+        description = try(tr.description, null)
+        expression  = local.tr_expression[tr.key]
+        action      = tr.type == "redirect" ? "redirect" : "rewrite"
 
         action_parameters = merge(
           tr.type == "redirect" ? {
@@ -455,17 +456,21 @@ resource "cloudflare_ruleset" "this" {
       } : null
     }
   ]
-}
 
-check "transform_rules_phase_collision" {
-  assert {
-    condition = alltrue([
-      for phase in local.tr_phases :
-      !contains([
-        for rs in var.rulesets : rs.phase
-        if !coalesce(try(rs.account_level, null), false)
-      ], phase)
-    ])
-    error_message = "transform_rules/presets generate a zone-level ruleset for a phase that a native `rulesets` entry already targets. Cloudflare allows only one zone-level entry-point ruleset per phase — consolidate all rules for that phase into a single `rulesets` entry instead of combining it with `transform_rules`/presets."
+  lifecycle {
+    precondition {
+      # Identical for every instance: a plain `check` block only warns and
+      # does not stop apply, which would let Terraform submit both a
+      # native and a generated ruleset for the same phase before Cloudflare
+      # rejects one of them. This blocks the whole apply instead.
+      condition = alltrue([
+        for phase in local.tr_phases :
+        !contains([
+          for rs in var.rulesets : rs.phase
+          if !coalesce(try(rs.account_level, null), false)
+        ], phase)
+      ])
+      error_message = "transform_rules/presets generate a zone-level ruleset for a phase that a native `rulesets` entry already targets. Cloudflare allows only one zone-level entry-point ruleset per phase — consolidate all rules for that phase into a single `rulesets` entry instead of combining it with `transform_rules`/presets."
+    }
   }
 }

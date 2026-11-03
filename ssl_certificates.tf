@@ -25,3 +25,17 @@ resource "cloudflare_authenticated_origin_pulls_hostname_certificate" "this" {
   certificate = var.aop_hostname_certificates[each.key].certificate
   private_key = var.aop_hostname_certificates[each.key].private_key
 }
+
+resource "cloudflare_authenticated_origin_pulls" "this" {
+  # Uploading a hostname certificate does not activate per-hostname AOP on
+  # its own; this association + enablement step is required separately.
+  for_each = nonsensitive(toset(keys(coalesce(var.aop_hostname_certificates, {}))))
+
+  zone_id = local.zone_id
+
+  config = [{
+    cert_id  = cloudflare_authenticated_origin_pulls_hostname_certificate.this[each.key].id
+    hostname = var.aop_hostname_certificates[each.key].hostname
+    enabled  = try(var.aop_hostname_certificates[each.key].enabled, true)
+  }]
+}

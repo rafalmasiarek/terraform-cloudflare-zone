@@ -162,7 +162,7 @@ module "zone" {
     {
       key    = "block-testnet"
       mode   = "block"
-      target = "ip"
+      target = "ip_range"
       value  = "192.0.2.0/24"
       notes  = "TEST-NET-1"
     }

@@ -1756,13 +1756,26 @@ variable "aop_hostname_certificates" {
   type = map(object({
     certificate = string
     private_key = string
+    hostname    = string
+    enabled     = optional(bool, true)
   }))
   default     = null
   sensitive   = true
   description = <<-EOT
-    Per-hostname Authenticated Origin Pulls certificates
-    (`cloudflare_authenticated_origin_pulls_hostname_certificate`), keyed
-    by your own key. The target hostname is derived by Cloudflare from the
-    certificate's own subject/SAN, not a separate argument.
+    Per-hostname Authenticated Origin Pulls certificates, keyed by your own
+    key. Uploading a certificate alone does not activate per-hostname AOP —
+    Cloudflare requires a separate association step, so each entry both
+    uploads the certificate (`cloudflare_authenticated_origin_pulls_hostname_certificate`)
+    and associates + enables it for `hostname`
+    (`cloudflare_authenticated_origin_pulls`).
+
+    Example:
+      aop_hostname_certificates = {
+        api = {
+          certificate = file("certs/api.pem")
+          private_key = file("certs/api.key")
+          hostname    = "api.example.com"
+        }
+      }
   EOT
 }
