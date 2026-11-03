@@ -107,6 +107,29 @@ module "zone" {
           }
         }
       ]
+    },
+    {
+      key   = "cors-assets-img"
+      name  = "CORS on /assets/img/"
+      kind  = "zone"
+      phase = "http_response_headers_transform"
+
+      rules = [
+        {
+          ref        = "cors-assets-img"
+          expression = "starts_with(http.request.uri.path, \"/assets/img/\")"
+          action     = "rewrite"
+
+          action_parameters = {
+            headers = {
+              "Access-Control-Allow-Origin" = {
+                operation = "set"
+                value     = "*"
+              }
+            }
+          }
+        }
+      ]
     }
   ]
 }

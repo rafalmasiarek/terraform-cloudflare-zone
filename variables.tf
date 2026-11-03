@@ -532,6 +532,14 @@ variable "rulesets" {
             expression = optional(string)
           }))
         }))
+
+        headers = optional(map(object({
+          operation  = string
+          value      = optional(string)
+          expression = optional(string)
+        })))
+
+        host_header = optional(string)
       }))
 
       logging = optional(object({
@@ -566,6 +574,44 @@ variable "rulesets" {
 
     This wrapper accepts a simplified input shape and internally converts it
     to the Cloudflare provider v5 resource schema.
+
+    Transform Rules (URL rewrite, header modifications, redirects) use this
+    wrapper with `kind = "zone"` and one of these phases:
+      * `http_request_transform`           — URL rewrites (action `rewrite`, `uri.path`)
+      * `http_request_early_transform` /
+        `http_request_late_transform`      — request header modification
+      * `http_response_headers_transform`  — response header modification
+                                              (action `rewrite`, `headers`)
+    Example (CORS for a path prefix):
+      rulesets = [{
+        key   = "cors-assets-img"
+        name  = "CORS on /assets/img/"
+        kind  = "zone"
+        phase = "http_response_headers_transform"
+        rules = [{
+          ref         = "cors-assets-img"
+          expression  = "starts_with(http.request.uri.path, \"/assets/img/\")"
+          action      = "rewrite"
+          action_parameters = {
+            headers = {
+              "Access-Control-Allow-Origin" = {
+                operation = "set"
+                value     = "*"
+              }
+            }
+          }
+        }]
+      }]
+
+    `action_parameters.headers` operation values: "add", "set", "remove"
+    (removing a header requires no `value`/`expression`; "add"/"set" require
+    one of them).
+
+    Limits (see https://developers.cloudflare.com/rules/transform/):
+      * Free plan: max 10 active Transform Rules per zone, shared across all
+        transform phases; regex (`matches()`) requires Business plan or higher.
+      * Header names starting with `cf-`/`x-cf-` cannot be modified; to
+        append `set-cookie` use operation `add`, not `set`.
   EOT
 
   validation {
@@ -595,6 +641,20 @@ variable "rulesets" {
       ]
     ]))
     error_message = "Each rule must define non-empty ref and action."
+  }
+
+  validation {
+    condition = alltrue(flatten([
+      for rs in var.rulesets : [
+        for rule in try(rs.rules, []) : [
+          for name, header in coalesce(try(rule.action_parameters.headers, null), {}) :
+          header.operation == "remove" ||
+          header.value != null ||
+          header.expression != null
+        ]
+      ]
+    ]))
+    error_message = "action_parameters.headers: every header operation other than \"remove\" requires `value` or `expression`."
   }
 }
 

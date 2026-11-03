@@ -288,6 +288,16 @@ resource "cloudflare_ruleset" "this" {
             expression = try(rule.action_parameters.uri.path.expression, null)
           } : null
         } : null
+
+        headers = try(rule.action_parameters.headers, null) != null ? {
+          for name, header in rule.action_parameters.headers : name => {
+            operation  = header.operation
+            value      = try(header.value, null)
+            expression = try(header.expression, null)
+          }
+        } : null
+
+        host_header = try(rule.action_parameters.host_header, null)
       } : null
 
       logging = try(rule.logging, null) != null ? {
