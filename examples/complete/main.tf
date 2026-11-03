@@ -107,6 +107,52 @@ module "zone" {
           }
         }
       ]
+    },
+    {
+      key   = "cors-assets-img"
+      name  = "CORS on /assets/img/"
+      kind  = "zone"
+      phase = "http_response_headers_transform"
+
+      rules = [
+        {
+          ref        = "cors-assets-img"
+          expression = "starts_with(http.request.uri.path, \"/assets/img/\")"
+          action     = "rewrite"
+
+          action_parameters = {
+            headers = {
+              "Access-Control-Allow-Origin" = {
+                operation = "set"
+                value     = "*"
+              }
+            }
+          }
+        }
+      ]
     }
   ]
+
+  transform_rules = [
+    {
+      key   = "cors-assets"
+      type  = "response_headers"
+      match = { path_prefix = "/assets/" }
+      response_headers = {
+        "Access-Control-Allow-Origin" = { operation = "set", value = "*" }
+      }
+    },
+    {
+      key  = "global-request-header"
+      type = "request_headers"
+      request_headers = {
+        "X-Example-Global" = { operation = "set", value = "1" }
+      }
+    }
+  ]
+
+  preset_hsts = {
+    max_age            = 31536000
+    include_subdomains = true
+  }
 }

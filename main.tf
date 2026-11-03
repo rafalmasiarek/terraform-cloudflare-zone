@@ -2,8 +2,107 @@ locals {
   zone_id        = cloudflare_zone.this.id
   global_comment = trimspace(var.comment) != "" ? var.comment : null
 
+  presets_expanded = flatten([
+    var.preset_cors == null ? [] : [
+      for i, p in var.preset_cors.paths : {
+        key   = "preset-cors-${i}"
+        type  = "response_headers"
+        match = { path_prefix = p }
+        response_headers = merge(
+          { "Access-Control-Allow-Origin" = { operation = "set", value = var.preset_cors.allow_origin } },
+          try(var.preset_cors.allow_methods, null) != null ? { "Access-Control-Allow-Methods" = { operation = "set", value = join(", ", var.preset_cors.allow_methods) } } : {},
+          try(var.preset_cors.allow_headers, null) != null ? { "Access-Control-Allow-Headers" = { operation = "set", value = join(", ", var.preset_cors.allow_headers) } } : {},
+        )
+      }
+    ],
+    var.preset_hsts == null ? [] : [{
+      key  = "preset-hsts"
+      type = "response_headers"
+      response_headers = {
+        "Strict-Transport-Security" = {
+          operation = "set"
+          value     = "max-age=${var.preset_hsts.max_age}${coalesce(try(var.preset_hsts.include_subdomains, null), false) ? "; includeSubDomains" : ""}${coalesce(try(var.preset_hsts.preload, null), false) ? "; preload" : ""}"
+        }
+      }
+    }],
+    var.preset_security_headers == null ? [] : [{
+      key  = "preset-security-headers"
+      type = "response_headers"
+      response_headers = merge(
+        coalesce(try(var.preset_security_headers.nosniff, null), true) ? { "X-Content-Type-Options" = { operation = "set", value = "nosniff" } } : {},
+        try(var.preset_security_headers.x_frame_options, null) != null ? { "X-Frame-Options" = { operation = "set", value = var.preset_security_headers.x_frame_options } } : {},
+        try(var.preset_security_headers.referrer_policy, null) != null ? { "Referrer-Policy" = { operation = "set", value = var.preset_security_headers.referrer_policy } } : {},
+        try(var.preset_security_headers.content_security_policy, null) != null ? { "Content-Security-Policy" = { operation = "set", value = var.preset_security_headers.content_security_policy } } : {},
+      )
+    }],
+    var.preset_browser_cache_static == null ? [] : [{
+      key   = "preset-browser-cache-static"
+      type  = "response_headers"
+      match = { path_prefix = var.preset_browser_cache_static.path_prefix }
+      response_headers = {
+        "Cache-Control" = {
+          operation = "set"
+          value     = "public, max-age=${var.preset_browser_cache_static.max_age}${coalesce(try(var.preset_browser_cache_static.immutable, null), false) ? ", immutable" : ""}"
+        }
+      }
+    }]
+  ])
+
+  all_transform_rules = concat(var.transform_rules, local.presets_expanded)
+
+  tr_conditions = {
+    for tr in local.all_transform_rules : tr.key => compact(flatten([
+      for m in [try(tr.match, null)] : m == null ? [] : compact([
+        try(m.path, null) != null ? "http.request.uri.path eq \"${m.path}\"" : null,
+        try(m.path_prefix, null) != null ? "starts_with(http.request.uri.path, \"${m.path_prefix}\")" : null,
+        try(m.path_suffix, null) != null ? "ends_with(http.request.uri.path, \"${m.path_suffix}\")" : null,
+        try(m.path_regex, null) != null ? "matches(http.request.uri.path, \"${m.path_regex}\")" : null,
+        try(m.host, null) != null ? "http.host eq \"${m.host}\"" : null,
+        try(m.method, null) != null ? "http.request.method eq \"${m.method}\"" : null,
+      ])
+    ]))
+  }
+
+  tr_expression = { for k, v in local.tr_conditions : k => length(v) == 0 ? "true" : join(" and ", v) }
+
+  tr_phase = {
+    response_headers = "http_response_headers_transform"
+    request_headers  = "http_request_late_transform"
+    url_rewrite      = "http_request_transform"
+    redirect         = "http_response_redirects"
+  }
+
+  transform_rules_expanded = [
+    for tr in local.all_transform_rules : {
+      key         = "tr-${tr.key}"
+      name        = coalesce(try(tr.name, null), "Transform rule ${tr.key}")
+      description = try(tr.description, null)
+      kind        = "zone"
+      phase       = local.tr_phase[tr.type]
+
+      rules = [{
+        ref        = "tr-${tr.key}"
+        expression = local.tr_expression[tr.key]
+        action     = tr.type == "redirect" ? "redirect" : "rewrite"
+
+        action_parameters = tr.type == "redirect" ? {
+          from_value = {
+            status_code = try(tr.redirect.status_code, null)
+            target_url  = { value = tr.redirect.url }
+          }
+          } : tr.type == "url_rewrite" ? {
+          uri = { path = { value = tr.url_rewrite.path } }
+          } : {
+          headers = tr.type == "request_headers" ? tr.request_headers : tr.response_headers
+        }
+      }]
+    }
+  ]
+
+  all_rulesets = concat(var.rulesets, local.transform_rules_expanded)
+
   rulesets_by_key = {
-    for ruleset in var.rulesets : ruleset.key => ruleset
+    for ruleset in local.all_rulesets : ruleset.key => ruleset
   }
 
   zone_settings_by_id = {
@@ -288,6 +387,16 @@ resource "cloudflare_ruleset" "this" {
             expression = try(rule.action_parameters.uri.path.expression, null)
           } : null
         } : null
+
+        headers = try(rule.action_parameters.headers, null) != null ? {
+          for name, header in rule.action_parameters.headers : name => {
+            operation  = header.operation
+            value      = try(header.value, null)
+            expression = try(header.expression, null)
+          }
+        } : null
+
+        host_header = try(rule.action_parameters.host_header, null)
       } : null
 
       logging = try(rule.logging, null) != null ? {
@@ -311,4 +420,14 @@ resource "cloudflare_ruleset" "this" {
       } : null
     }
   ]
+}
+
+check "transform_rules_key_collision" {
+  assert {
+    condition = alltrue([
+      for tr in var.transform_rules :
+      !contains([for rs in var.rulesets : rs.key], "tr-${tr.key}")
+    ])
+    error_message = "transform_rules: keys must not collide with `rulesets` keys (expanded keys are prefixed with `tr-`)."
+  }
 }
