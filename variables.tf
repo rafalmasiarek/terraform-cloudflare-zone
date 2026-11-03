@@ -662,56 +662,94 @@ variable "rulesets" {
 }
 
 variable "transform_rules" {
-  type = list(object({
-    key         = string
-    name        = optional(string)
-    description = optional(string)
-    type        = string # response_headers | request_headers | url_rewrite | redirect
+  type = object({
+    rules = optional(list(object({
+      key         = string
+      name        = optional(string)
+      description = optional(string)
+      type        = string # response_headers | request_headers | url_rewrite | redirect
 
-    match = optional(object({
-      path        = optional(string)
-      path_prefix = optional(string)
-      path_suffix = optional(string)
-      path_regex  = optional(string)
-      host        = optional(string)
-      method      = optional(string)
+      match = optional(object({
+        path        = optional(string)
+        path_prefix = optional(string)
+        path_suffix = optional(string)
+        path_regex  = optional(string)
+        host        = optional(string)
+        method      = optional(string)
+      }))
+
+      response_headers = optional(map(object({
+        operation  = string
+        value      = optional(string)
+        expression = optional(string)
+      })))
+
+      request_headers = optional(map(object({
+        operation  = string
+        value      = optional(string)
+        expression = optional(string)
+      })))
+
+      url_rewrite = optional(object({
+        path = string
+      }))
+
+      redirect = optional(object({
+        url         = string
+        status_code = optional(number)
+      }))
+    })), [])
+
+    # Named, ready-made recipes that expand into the same pipeline as
+    # `rules` above — no Rules-language or `match`/`type` bookkeeping
+    # needed. `cors` and `browser_cache_static` are lists because you may
+    # want more than one (different paths, different settings); `hsts`
+    # and `security_headers` are single blocks because they are global,
+    # zone-wide headers — a zone has exactly one HSTS policy, not several.
+    presets = optional(object({
+      cors = optional(list(object({
+        key           = string
+        paths         = list(string)
+        allow_origin  = string
+        allow_methods = optional(list(string))
+        allow_headers = optional(list(string))
+      })))
+
+      hsts = optional(object({
+        max_age            = number
+        include_subdomains = optional(bool)
+        preload            = optional(bool)
+      }))
+
+      security_headers = optional(object({
+        nosniff                 = optional(bool)
+        x_frame_options         = optional(string)
+        referrer_policy         = optional(string)
+        content_security_policy = optional(string)
+      }))
+
+      browser_cache_static = optional(list(object({
+        key         = string
+        path_prefix = string
+        max_age     = number
+        immutable   = optional(bool)
+      })))
     }))
-
-    response_headers = optional(map(object({
-      operation  = string
-      value      = optional(string)
-      expression = optional(string)
-    })))
-
-    request_headers = optional(map(object({
-      operation  = string
-      value      = optional(string)
-      expression = optional(string)
-    })))
-
-    url_rewrite = optional(object({
-      path = string
-    }))
-
-    redirect = optional(object({
-      url         = string
-      status_code = optional(number)
-    }))
-  }))
-  default     = []
+  })
+  default     = {}
   description = <<-EOT
-    Simplified Transform Rules. Each item becomes one `cloudflare_ruleset`
-    (kind `zone`) whose rule expression is built from `match` — no
-    Rules-language writing needed. For full control use the `rulesets`
-    input instead.
+    Simplified Transform Rules. `rules` items and expanded `presets` items
+    both become `cloudflare_ruleset` entries (kind `zone`) grouped by
+    phase — no Rules-language writing needed. For full control use the
+    `rulesets` input instead.
 
-    `type` values and phases:
+    `rules[*].type` values and phases:
       * `response_headers` — phase `http_response_headers_transform` (`response_headers` payload)
       * `request_headers`  — phase `http_request_late_transform` (`request_headers` payload)
       * `url_rewrite`      — phase `http_request_transform` (`url_rewrite.path` payload)
       * `redirect`         — phase `http_request_dynamic_redirect` (`redirect.url` + optional `status_code`)
 
-    `match` fields (combined with AND; omit `match` for a global rule):
+    `rules[*].match` fields (combined with AND; omit `match` for a global rule):
       * `path`        — exact path match
       * `path_prefix` — starts_with
       * `path_suffix` — ends_with
@@ -720,37 +758,62 @@ variable "transform_rules" {
       * `host`        — exact host match
       * `method`      — exact HTTP method match
 
-    `response_headers`/`request_headers` operation values: "add", "set",
-    "remove" (removing a header requires no `value`/`expression`;
-    "add"/"set" require one of them).
+    `response_headers`/`request_headers` operation is a free-form string
+    passed through to the provider (documented values: "add", "set",
+    "remove"; the API may accept others such as "prepend"/"append" for
+    specific headers, e.g. `set-cookie`). Removing a header requires no
+    `value`/`expression`; every other operation requires one of them.
 
-    Limits: Free plan allows 10 active Transform Rules per zone, shared
-    across all transform phases (https://developers.cloudflare.com/rules/transform/).
+    `presets`:
+      * `cors`                  — one or more CORS response-header blocks, one ruleset rule per path
+      * `hsts`                  — Strict-Transport-Security (global)
+      * `security_headers`      — common security response headers (global):
+          `nosniff` (default true), `x_frame_options`, `referrer_policy`, `content_security_policy`
+      * `browser_cache_static`  — one or more browser-facing Cache-Control
+        blocks per path prefix. WARNING: sets the response header seen by
+        browsers only — it does NOT change Cloudflare edge caching; use
+        the `rulesets` input with cache rules for that
+        (https://developers.cloudflare.com/rules/transform/response-header-modification/).
+
+    Limits (see https://developers.cloudflare.com/rules/transform/):
+      * Free plan: max 10 active Transform Rules per zone, shared across all
+        transform phases; regex (the `matches` operator) requires Business
+        plan or higher.
+      * Header names starting with `cf-`/`x-cf-` cannot be modified; to
+        append `set-cookie` use operation `add`, not `set`.
 
     Example:
-      transform_rules = [
-        {
-          key   = "cors-assets"
-          type  = "response_headers"
-          match = { path_prefix = "/assets/" }
-          response_headers = {
-            "Access-Control-Allow-Origin" = { operation = "set", value = "*" }
+      transform_rules = {
+        rules = [
+          {
+            key   = "cors-assets"
+            type  = "response_headers"
+            match = { path_prefix = "/assets/" }
+            response_headers = {
+              "Access-Control-Allow-Origin" = { operation = "set", value = "*" }
+            }
+          }
+        ]
+        presets = {
+          hsts = {
+            max_age            = 31536000
+            include_subdomains = true
           }
         }
-      ]
+      }
   EOT
 
   validation {
     condition = alltrue([
-      for tr in var.transform_rules :
+      for tr in coalesce(var.transform_rules.rules, []) :
       contains(["response_headers", "request_headers", "url_rewrite", "redirect"], tr.type)
     ])
-    error_message = "transform_rules: type must be one of response_headers, request_headers, url_rewrite, redirect."
+    error_message = "transform_rules.rules: type must be one of response_headers, request_headers, url_rewrite, redirect."
   }
 
   validation {
     condition = alltrue([
-      for tr in var.transform_rules :
+      for tr in coalesce(var.transform_rules.rules, []) :
       (
         (tr.type == "response_headers" && tr.response_headers != null && tr.request_headers == null && tr.url_rewrite == null && tr.redirect == null) ||
         (tr.type == "request_headers" && tr.request_headers != null && tr.response_headers == null && tr.url_rewrite == null && tr.redirect == null) ||
@@ -758,125 +821,66 @@ variable "transform_rules" {
         (tr.type == "redirect" && tr.redirect != null && tr.response_headers == null && tr.request_headers == null && tr.url_rewrite == null)
       )
     ])
-    error_message = "transform_rules: each item must define exactly the payload matching its type."
+    error_message = "transform_rules.rules: each item must define exactly the payload matching its type."
   }
 
   validation {
-    condition     = length(var.transform_rules) == length(distinct([for tr in var.transform_rules : tr.key]))
-    error_message = "transform_rules: keys must be unique."
+    condition = length(coalesce(var.transform_rules.rules, [])) == length(distinct([
+      for tr in coalesce(var.transform_rules.rules, []) : tr.key
+    ]))
+    error_message = "transform_rules.rules: keys must be unique."
   }
 
   validation {
     condition = alltrue([
-      for tr in var.transform_rules :
+      for tr in coalesce(var.transform_rules.rules, []) :
       try(tr.match, null) == null ||
       (try(tr.match.path, null) == null || (try(tr.match.path_prefix, null) == null && try(tr.match.path_suffix, null) == null && try(tr.match.path_regex, null) == null))
     ])
-    error_message = "transform_rules: match.path is exclusive with path_prefix/path_suffix/path_regex."
+    error_message = "transform_rules.rules: match.path is exclusive with path_prefix/path_suffix/path_regex."
   }
 
   validation {
     condition = alltrue(flatten([
-      for tr in var.transform_rules : concat(
+      for tr in coalesce(var.transform_rules.rules, []) : concat(
         [for name, h in coalesce(try(tr.response_headers, null), {}) : h.operation == "remove" || h.value != null || h.expression != null],
         [for name, h in coalesce(try(tr.request_headers, null), {}) : h.operation == "remove" || h.value != null || h.expression != null]
       )
     ]))
-    error_message = "transform_rules: every header operation other than \"remove\" requires `value` or `expression`."
+    error_message = "transform_rules.rules: every header operation other than \"remove\" requires `value` or `expression`."
   }
-}
-
-variable "preset_cors" {
-  type = object({
-    paths         = list(string)
-    allow_origin  = string
-    allow_methods = optional(list(string))
-    allow_headers = optional(list(string))
-  })
-  default     = null
-  description = <<-EOT
-    Preset: CORS response headers. One ruleset per path.
-    `allow_methods`/`allow_headers` add preflight headers when set.
-    Example:
-      preset_cors = {
-        paths        = ["/assets/img/", "/fonts/"]
-        allow_origin = "*"
-      }
-  EOT
 
   validation {
-    condition     = var.preset_cors == null ? true : length(var.preset_cors.paths) > 0
-    error_message = "preset_cors: paths must not be empty."
+    condition = alltrue([
+      for c in coalesce(try(var.transform_rules.presets.cors, null), []) : length(c.paths) > 0
+    ])
+    error_message = "transform_rules.presets.cors: paths must not be empty."
   }
-}
-
-variable "preset_hsts" {
-  type = object({
-    max_age            = number
-    include_subdomains = optional(bool)
-    preload            = optional(bool)
-  })
-  default     = null
-  description = <<-EOT
-    Preset: Strict-Transport-Security response header (global).
-    Example:
-      preset_hsts = {
-        max_age            = 31536000
-        include_subdomains = true
-      }
-  EOT
 
   validation {
-    condition     = var.preset_hsts == null ? true : var.preset_hsts.max_age > 0
-    error_message = "preset_hsts: max_age must be > 0."
+    condition = length(coalesce(try(var.transform_rules.presets.cors, null), [])) == length(distinct([
+      for c in coalesce(try(var.transform_rules.presets.cors, null), []) : c.key
+    ]))
+    error_message = "transform_rules.presets.cors: keys must be unique."
   }
-}
-
-variable "preset_security_headers" {
-  type = object({
-    nosniff                 = optional(bool)
-    x_frame_options         = optional(string)
-    referrer_policy         = optional(string)
-    content_security_policy = optional(string)
-  })
-  default     = null
-  description = <<-EOT
-    Preset: common security response headers (global).
-      * `nosniff` (default true) — X-Content-Type-Options: nosniff
-      * `x_frame_options`        — e.g. "DENY" or "SAMEORIGIN"
-      * `referrer_policy`        — e.g. "strict-origin-when-cross-origin"
-      * `content_security_policy` — full CSP string
-    Example:
-      preset_security_headers = {
-        x_frame_options = "DENY"
-        referrer_policy = "strict-origin-when-cross-origin"
-      }
-  EOT
-}
-
-variable "preset_browser_cache_static" {
-  type = object({
-    path_prefix = string
-    max_age     = number
-    immutable   = optional(bool)
-  })
-  default     = null
-  description = <<-EOT
-    Preset: browser-facing Cache-Control for a path prefix.
-    WARNING: this sets the response header for browsers only. It does NOT
-    change Cloudflare edge caching — for that use the `rulesets` input with
-    cache rules (https://developers.cloudflare.com/rules/transform/response-header-modification/).
-    Example:
-      preset_browser_cache_static = {
-        path_prefix = "/assets/"
-        max_age     = 31536000
-        immutable   = true
-      }
-  EOT
 
   validation {
-    condition     = var.preset_browser_cache_static == null ? true : var.preset_browser_cache_static.max_age > 0
-    error_message = "preset_browser_cache_static: max_age must be > 0."
+    condition     = try(var.transform_rules.presets.hsts, null) == null ? true : var.transform_rules.presets.hsts.max_age > 0
+    error_message = "transform_rules.presets.hsts: max_age must be > 0."
+  }
+
+  validation {
+    condition = alltrue([
+      for b in coalesce(try(var.transform_rules.presets.browser_cache_static, null), []) : b.max_age > 0
+    ])
+    error_message = "transform_rules.presets.browser_cache_static: max_age must be > 0."
+  }
+
+  validation {
+    condition = length(coalesce(try(var.transform_rules.presets.browser_cache_static, null), [])) == length(distinct([
+      for b in coalesce(try(var.transform_rules.presets.browser_cache_static, null), []) : b.key
+    ]))
+    error_message = "transform_rules.presets.browser_cache_static: keys must be unique."
   }
 }
 

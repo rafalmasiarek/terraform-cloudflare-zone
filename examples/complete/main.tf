@@ -110,33 +110,37 @@ module "zone" {
     }
   ]
 
-  transform_rules = [
-    {
-      key   = "cors-assets"
-      type  = "response_headers"
-      match = { path_prefix = "/assets/" }
-      response_headers = {
-        "Access-Control-Allow-Origin" = { operation = "set", value = "*" }
+  transform_rules = {
+    rules = [
+      {
+        key  = "global-request-header"
+        type = "request_headers"
+        request_headers = {
+          "X-Example-Global" = { operation = "set", value = "1" }
+        }
+      },
+      {
+        key         = "rewrite-legacy-blog"
+        type        = "url_rewrite"
+        match       = { path_prefix = "/blog/" }
+        url_rewrite = { path = "/news/" }
       }
-    },
-    {
-      key  = "global-request-header"
-      type = "request_headers"
-      request_headers = {
-        "X-Example-Global" = { operation = "set", value = "1" }
-      }
-    },
-    {
-      key         = "rewrite-legacy-blog"
-      type        = "url_rewrite"
-      match       = { path_prefix = "/blog/" }
-      url_rewrite = { path = "/news/" }
-    }
-  ]
+    ]
 
-  preset_hsts = {
-    max_age            = 31536000
-    include_subdomains = true
+    presets = {
+      cors = [
+        {
+          key          = "assets"
+          paths        = ["/assets/"]
+          allow_origin = "*"
+        }
+      ]
+
+      hsts = {
+        max_age            = 31536000
+        include_subdomains = true
+      }
+    }
   }
 
   managed_transforms = {

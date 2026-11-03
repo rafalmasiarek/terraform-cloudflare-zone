@@ -3,52 +3,56 @@ locals {
   global_comment = trimspace(var.comment) != "" ? var.comment : null
 
   presets_expanded = flatten([
-    var.preset_cors == null ? [] : [
-      for i, p in var.preset_cors.paths : {
-        key   = "preset-cors-${i}"
-        type  = "response_headers"
-        match = { path_prefix = p }
-        response_headers = merge(
-          { "Access-Control-Allow-Origin" = { operation = "set", value = var.preset_cors.allow_origin } },
-          try(var.preset_cors.allow_methods, null) != null ? { "Access-Control-Allow-Methods" = { operation = "set", value = join(", ", var.preset_cors.allow_methods) } } : {},
-          try(var.preset_cors.allow_headers, null) != null ? { "Access-Control-Allow-Headers" = { operation = "set", value = join(", ", var.preset_cors.allow_headers) } } : {},
-        )
-      }
-    ],
-    var.preset_hsts == null ? [] : [{
+    flatten([
+      for c in coalesce(try(var.transform_rules.presets.cors, null), []) : [
+        for i, p in c.paths : {
+          key   = "preset-cors-${c.key}-${i}"
+          type  = "response_headers"
+          match = { path_prefix = p }
+          response_headers = merge(
+            { "Access-Control-Allow-Origin" = { operation = "set", value = c.allow_origin } },
+            try(c.allow_methods, null) != null ? { "Access-Control-Allow-Methods" = { operation = "set", value = join(", ", c.allow_methods) } } : {},
+            try(c.allow_headers, null) != null ? { "Access-Control-Allow-Headers" = { operation = "set", value = join(", ", c.allow_headers) } } : {},
+          )
+        }
+      ]
+    ]),
+    try(var.transform_rules.presets.hsts, null) == null ? [] : [{
       key  = "preset-hsts"
       type = "response_headers"
       response_headers = {
         "Strict-Transport-Security" = {
           operation = "set"
-          value     = "max-age=${var.preset_hsts.max_age}${coalesce(try(var.preset_hsts.include_subdomains, null), false) ? "; includeSubDomains" : ""}${coalesce(try(var.preset_hsts.preload, null), false) ? "; preload" : ""}"
+          value     = "max-age=${var.transform_rules.presets.hsts.max_age}${coalesce(try(var.transform_rules.presets.hsts.include_subdomains, null), false) ? "; includeSubDomains" : ""}${coalesce(try(var.transform_rules.presets.hsts.preload, null), false) ? "; preload" : ""}"
         }
       }
     }],
-    var.preset_security_headers == null ? [] : [{
+    try(var.transform_rules.presets.security_headers, null) == null ? [] : [{
       key  = "preset-security-headers"
       type = "response_headers"
       response_headers = merge(
-        coalesce(try(var.preset_security_headers.nosniff, null), true) ? { "X-Content-Type-Options" = { operation = "set", value = "nosniff" } } : {},
-        try(var.preset_security_headers.x_frame_options, null) != null ? { "X-Frame-Options" = { operation = "set", value = var.preset_security_headers.x_frame_options } } : {},
-        try(var.preset_security_headers.referrer_policy, null) != null ? { "Referrer-Policy" = { operation = "set", value = var.preset_security_headers.referrer_policy } } : {},
-        try(var.preset_security_headers.content_security_policy, null) != null ? { "Content-Security-Policy" = { operation = "set", value = var.preset_security_headers.content_security_policy } } : {},
+        coalesce(try(var.transform_rules.presets.security_headers.nosniff, null), true) ? { "X-Content-Type-Options" = { operation = "set", value = "nosniff" } } : {},
+        try(var.transform_rules.presets.security_headers.x_frame_options, null) != null ? { "X-Frame-Options" = { operation = "set", value = var.transform_rules.presets.security_headers.x_frame_options } } : {},
+        try(var.transform_rules.presets.security_headers.referrer_policy, null) != null ? { "Referrer-Policy" = { operation = "set", value = var.transform_rules.presets.security_headers.referrer_policy } } : {},
+        try(var.transform_rules.presets.security_headers.content_security_policy, null) != null ? { "Content-Security-Policy" = { operation = "set", value = var.transform_rules.presets.security_headers.content_security_policy } } : {},
       )
     }],
-    var.preset_browser_cache_static == null ? [] : [{
-      key   = "preset-browser-cache-static"
-      type  = "response_headers"
-      match = { path_prefix = var.preset_browser_cache_static.path_prefix }
-      response_headers = {
-        "Cache-Control" = {
-          operation = "set"
-          value     = "public, max-age=${var.preset_browser_cache_static.max_age}${coalesce(try(var.preset_browser_cache_static.immutable, null), false) ? ", immutable" : ""}"
+    [
+      for b in coalesce(try(var.transform_rules.presets.browser_cache_static, null), []) : {
+        key   = "preset-browser-cache-static-${b.key}"
+        type  = "response_headers"
+        match = { path_prefix = b.path_prefix }
+        response_headers = {
+          "Cache-Control" = {
+            operation = "set"
+            value     = "public, max-age=${b.max_age}${coalesce(try(b.immutable, null), false) ? ", immutable" : ""}"
+          }
         }
       }
-    }]
+    ]
   ])
 
-  all_transform_rules = concat(var.transform_rules, local.presets_expanded)
+  all_transform_rules = concat(coalesce(var.transform_rules.rules, []), local.presets_expanded)
 
   # Escapes a value for embedding in a double-quoted Rules-language string
   # literal (backslash first, then the quote itself).
