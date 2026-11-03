@@ -658,6 +658,131 @@ variable "rulesets" {
   }
 }
 
+variable "transform_rules" {
+  type = list(object({
+    key         = string
+    name        = optional(string)
+    description = optional(string)
+    type        = string # response_headers | request_headers | url_rewrite | redirect
+
+    match = optional(object({
+      path        = optional(string)
+      path_prefix = optional(string)
+      path_suffix = optional(string)
+      path_regex  = optional(string)
+      host        = optional(string)
+      method      = optional(string)
+    }))
+
+    response_headers = optional(map(object({
+      operation  = string
+      value      = optional(string)
+      expression = optional(string)
+    })))
+
+    request_headers = optional(map(object({
+      operation  = string
+      value      = optional(string)
+      expression = optional(string)
+    })))
+
+    url_rewrite = optional(object({
+      path = string
+    }))
+
+    redirect = optional(object({
+      url         = string
+      status_code = optional(number)
+    }))
+  }))
+  default     = []
+  description = <<-EOT
+    Simplified Transform Rules. Each item becomes one `cloudflare_ruleset`
+    (kind `zone`) whose rule expression is built from `match` — no
+    Rules-language writing needed. For full control use the `rulesets`
+    input instead.
+
+    `type` values and phases:
+      * `response_headers` — phase `http_response_headers_transform` (`response_headers` payload)
+      * `request_headers`  — phase `http_request_late_transform` (`request_headers` payload)
+      * `url_rewrite`      — phase `http_request_transform` (`url_rewrite.path` payload)
+      * `redirect`         — phase `http_response_redirects` (`redirect.url` + optional `status_code`)
+
+    `match` fields (combined with AND; omit `match` for a global rule):
+      * `path`        — exact path match
+      * `path_prefix` — starts_with
+      * `path_suffix` — ends_with
+      * `path_regex`  — regex (RE2). Requires Business plan or higher;
+        regex is NOT available for Transform Rules on Free/Pro plans.
+      * `host`        — exact host match
+      * `method`      — exact HTTP method match
+
+    `response_headers`/`request_headers` operation values: "add", "set",
+    "remove" (removing a header requires no `value`/`expression`;
+    "add"/"set" require one of them).
+
+    Limits: Free plan allows 10 active Transform Rules per zone, shared
+    across all transform phases (https://developers.cloudflare.com/rules/transform/).
+
+    Example:
+      transform_rules = [
+        {
+          key   = "cors-assets"
+          type  = "response_headers"
+          match = { path_prefix = "/assets/" }
+          response_headers = {
+            "Access-Control-Allow-Origin" = { operation = "set", value = "*" }
+          }
+        }
+      ]
+  EOT
+
+  validation {
+    condition = alltrue([
+      for tr in var.transform_rules :
+      contains(["response_headers", "request_headers", "url_rewrite", "redirect"], tr.type)
+    ])
+    error_message = "transform_rules: type must be one of response_headers, request_headers, url_rewrite, redirect."
+  }
+
+  validation {
+    condition = alltrue([
+      for tr in var.transform_rules :
+      (
+        (tr.type == "response_headers" && tr.response_headers != null && tr.request_headers == null && tr.url_rewrite == null && tr.redirect == null) ||
+        (tr.type == "request_headers" && tr.request_headers != null && tr.response_headers == null && tr.url_rewrite == null && tr.redirect == null) ||
+        (tr.type == "url_rewrite" && tr.url_rewrite != null && tr.response_headers == null && tr.request_headers == null && tr.redirect == null) ||
+        (tr.type == "redirect" && tr.redirect != null && tr.response_headers == null && tr.request_headers == null && tr.url_rewrite == null)
+      )
+    ])
+    error_message = "transform_rules: each item must define exactly the payload matching its type."
+  }
+
+  validation {
+    condition     = length(var.transform_rules) == length(distinct([for tr in var.transform_rules : tr.key]))
+    error_message = "transform_rules: keys must be unique."
+  }
+
+  validation {
+    condition = alltrue([
+      for tr in var.transform_rules :
+      try(tr.match, null) == null ||
+      (try(tr.match.path, null) == null || (try(tr.match.path_prefix, null) == null && try(tr.match.path_suffix, null) == null && try(tr.match.path_regex, null) == null))
+    ])
+    error_message = "transform_rules: match.path is exclusive with path_prefix/path_suffix/path_regex."
+  }
+
+  validation {
+    condition = alltrue(flatten([
+      for tr in var.transform_rules : concat(
+        [for name, h in coalesce(try(tr.response_headers, null), {}) : h.operation == "remove" || h.value != null || h.expression != null],
+        [for name, h in coalesce(try(tr.request_headers, null), {}) : h.operation == "remove" || h.value != null || h.expression != null]
+      )
+    ]))
+    error_message = "transform_rules: every header operation other than \"remove\" requires `value` or `expression`."
+  }
+}
+
 variable "universal_ssl_setting" {
   type = object({
     enabled = optional(bool)

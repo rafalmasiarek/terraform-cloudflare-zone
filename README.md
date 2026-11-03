@@ -110,6 +110,7 @@ No modules.
 | <a name="input_spf"></a> [spf](#input\_spf) | Helper for an SPF TXT record.<br><br>This helper is semantic: instead of passing raw SPF terms, provide inputs such as<br>`includes`, `ip4s`, `ip6s`, `a`, `mx`, `redirect` and `all`.<br><br>Example:<pre>hcl<br>spf = {<br>  includes = ["_spf.google.com", "spf.mailgun.org"]<br>  ip4s     = ["192.0.2.10", "198.51.100.0/24"]<br>  all      = "softfail"<br>}</pre> | <pre>object({<br>    name     = optional(string, "@")<br>    includes = optional(list(string), [])<br>    ip4s     = optional(list(string), [])<br>    ip6s     = optional(list(string), [])<br>    a        = optional(bool, false)<br>    mx       = optional(bool, false)<br>    redirect = optional(string)<br>    all      = optional(string, "fail")<br>    ttl      = optional(number)<br>    comment  = optional(string)<br>  })</pre> | `null` | no |
 | <a name="input_tiered_cache"></a> [tiered\_cache](#input\_tiered\_cache) | Smart Tiered Cache setting for the zone, managed with `cloudflare_tiered_cache`.<br><br>Example:<pre>hcl<br>tiered_cache = {<br>  value = "on"<br>}</pre> | <pre>object({<br>    value = optional(string)<br>  })</pre> | `null` | no |
 | <a name="input_tlsrpt"></a> [tlsrpt](#input\_tlsrpt) | Helper for the SMTP TLS Reporting TXT record published at `_smtp._tls`.<br><br>Example:<pre>hcl<br>tlsrpt = {<br>  rua = ["mailto:tlsrpt@example.com"]<br>}</pre> | <pre>object({<br>    rua     = list(string)<br>    ttl     = optional(number)<br>    comment = optional(string)<br>  })</pre> | `null` | no |
+| <a name="input_transform_rules"></a> [transform\_rules](#input\_transform\_rules) | Simplified Transform Rules. Each item becomes one `cloudflare_ruleset`<br>(kind `zone`) whose rule expression is built from `match` — no<br>Rules-language writing needed. For full control use the `rulesets`<br>input instead.<br><br>`type` values and phases:<br>  * `response_headers` — phase `http_response_headers_transform` (`response_headers` payload)<br>  * `request_headers`  — phase `http_request_late_transform` (`request_headers` payload)<br>  * `url_rewrite`      — phase `http_request_transform` (`url_rewrite.path` payload)<br>  * `redirect`         — phase `http_response_redirects` (`redirect.url` + optional `status_code`)<br><br>`match` fields (combined with AND; omit `match` for a global rule):<br>  * `path`        — exact path match<br>  * `path_prefix` — starts\_with<br>  * `path_suffix` — ends\_with<br>  * `path_regex`  — regex (RE2). Requires Business plan or higher;<br>    regex is NOT available for Transform Rules on Free/Pro plans.<br>  * `host`        — exact host match<br>  * `method`      — exact HTTP method match<br><br>`response_headers`/`request_headers` operation values: "add", "set",<br>"remove" (removing a header requires no `value`/`expression`;<br>"add"/"set" require one of them).<br><br>Limits: Free plan allows 10 active Transform Rules per zone, shared<br>across all transform phases (https://developers.cloudflare.com/rules/transform/).<br><br>Example:<br>  transform\_rules = [<br>    {<br>      key   = "cors-assets"<br>      type  = "response\_headers"<br>      match = { path\_prefix = "/assets/" }<br>      response\_headers = {<br>        "Access-Control-Allow-Origin" = { operation = "set", value = "*" }<br>      }<br>    }<br>  ] | <pre>list(object({<br>    key         = string<br>    name        = optional(string)<br>    description = optional(string)<br>    type        = string # response_headers | request_headers | url_rewrite | redirect<br><br>    match = optional(object({<br>      path        = optional(string)<br>      path_prefix = optional(string)<br>      path_suffix = optional(string)<br>      path_regex  = optional(string)<br>      host        = optional(string)<br>      method      = optional(string)<br>    }))<br><br>    response_headers = optional(map(object({<br>      operation  = string<br>      value      = optional(string)<br>      expression = optional(string)<br>    })))<br><br>    request_headers = optional(map(object({<br>      operation  = string<br>      value      = optional(string)<br>      expression = optional(string)<br>    })))<br><br>    url_rewrite = optional(object({<br>      path = string<br>    }))<br><br>    redirect = optional(object({<br>      url         = string<br>      status_code = optional(number)<br>    }))<br>  }))</pre> | `[]` | no |
 | <a name="input_type"></a> [type](#input\_type) | A full zone implies that DNS is hosted with Cloudflare. A partial zone is typically a partner-hosted zone or a CNAME setup. Possible values: `full`, `partial`.<br>To learn more and choose the right configuration for you, see the documentation about [full](https://developers.cloudflare.com/dns/zone-setups/full-setup/) or [partial CNAME](https://developers.cloudflare.com/dns/zone-setups/partial-setup/) setups. | `string` | `"full"` | no |
 | <a name="input_universal_ssl_setting"></a> [universal\_ssl\_setting](#input\_universal\_ssl\_setting) | Universal SSL setting for the zone, managed with `cloudflare_universal_ssl_setting`.<br><br>Example:<pre>hcl<br>universal_ssl_setting = {<br>  enabled = true<br>}</pre> | <pre>object({<br>    enabled = optional(bool)<br>  })</pre> | `null` | no |
 | <a name="input_worker_hostnames"></a> [worker\_hostnames](#input\_worker\_hostnames) | Hostnames bound exclusively to a Worker script via Cloudflare Custom<br>Domains, managed with `cloudflare_workers_custom_domain`.<br><br>Unlike `worker_routes`, a custom domain is host-exclusive (no path<br>pattern) and Cloudflare provisions DNS and TLS for it automatically -<br>no separate DNS record is needed in this zone's records.<br><br>Example:<pre>hcl<br>worker_hostnames = [<br>  {<br>    hostname = "api.example.com"<br>    script   = "my-worker"<br>  }<br>]</pre> | <pre>list(object({<br>    hostname = string<br>    script   = string<br>  }))</pre> | `[]` | no |
@@ -289,6 +290,24 @@ module "zone" {
           }
         }
       ]
+    }
+  ]
+
+  transform_rules = [
+    {
+      key   = "cors-assets"
+      type  = "response_headers"
+      match = { path_prefix = "/assets/" }
+      response_headers = {
+        "Access-Control-Allow-Origin" = { operation = "set", value = "*" }
+      }
+    },
+    {
+      key  = "global-request-header"
+      type = "request_headers"
+      request_headers = {
+        "X-Example-Global" = { operation = "set", value = "1" }
+      }
     }
   ]
 }

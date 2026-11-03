@@ -2,8 +2,59 @@ locals {
   zone_id        = cloudflare_zone.this.id
   global_comment = trimspace(var.comment) != "" ? var.comment : null
 
+  tr_conditions = {
+    for tr in var.transform_rules : tr.key => compact(flatten([
+      for m in [try(tr.match, null)] : m == null ? [] : compact([
+        try(m.path, null) != null ? "http.request.uri.path eq \"${m.path}\"" : null,
+        try(m.path_prefix, null) != null ? "starts_with(http.request.uri.path, \"${m.path_prefix}\")" : null,
+        try(m.path_suffix, null) != null ? "ends_with(http.request.uri.path, \"${m.path_suffix}\")" : null,
+        try(m.path_regex, null) != null ? "matches(http.request.uri.path, \"${m.path_regex}\")" : null,
+        try(m.host, null) != null ? "http.host eq \"${m.host}\"" : null,
+        try(m.method, null) != null ? "http.request.method eq \"${m.method}\"" : null,
+      ])
+    ]))
+  }
+
+  tr_expression = { for k, v in local.tr_conditions : k => length(v) == 0 ? "true" : join(" and ", v) }
+
+  tr_phase = {
+    response_headers = "http_response_headers_transform"
+    request_headers  = "http_request_late_transform"
+    url_rewrite      = "http_request_transform"
+    redirect         = "http_response_redirects"
+  }
+
+  transform_rules_expanded = [
+    for tr in var.transform_rules : {
+      key         = "tr-${tr.key}"
+      name        = coalesce(try(tr.name, null), "Transform rule ${tr.key}")
+      description = try(tr.description, null)
+      kind        = "zone"
+      phase       = local.tr_phase[tr.type]
+
+      rules = [{
+        ref        = "tr-${tr.key}"
+        expression = local.tr_expression[tr.key]
+        action     = tr.type == "redirect" ? "redirect" : "rewrite"
+
+        action_parameters = tr.type == "redirect" ? {
+          from_value = {
+            status_code = try(tr.redirect.status_code, null)
+            target_url  = { value = tr.redirect.url }
+          }
+          } : tr.type == "url_rewrite" ? {
+          uri = { path = { value = tr.url_rewrite.path } }
+          } : {
+          headers = tr.type == "request_headers" ? tr.request_headers : tr.response_headers
+        }
+      }]
+    }
+  ]
+
+  all_rulesets = concat(var.rulesets, local.transform_rules_expanded)
+
   rulesets_by_key = {
-    for ruleset in var.rulesets : ruleset.key => ruleset
+    for ruleset in local.all_rulesets : ruleset.key => ruleset
   }
 
   zone_settings_by_id = {
@@ -321,4 +372,14 @@ resource "cloudflare_ruleset" "this" {
       } : null
     }
   ]
+}
+
+check "transform_rules_key_collision" {
+  assert {
+    condition = alltrue([
+      for tr in var.transform_rules :
+      !contains([for rs in var.rulesets : rs.key], "tr-${tr.key}")
+    ])
+    error_message = "transform_rules: keys must not collide with `rulesets` keys (expanded keys are prefixed with `tr-`)."
+  }
 }

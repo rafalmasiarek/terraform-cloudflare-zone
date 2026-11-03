@@ -132,4 +132,22 @@ module "zone" {
       ]
     }
   ]
+
+  transform_rules = [
+    {
+      key   = "cors-assets"
+      type  = "response_headers"
+      match = { path_prefix = "/assets/" }
+      response_headers = {
+        "Access-Control-Allow-Origin" = { operation = "set", value = "*" }
+      }
+    },
+    {
+      key  = "global-request-header"
+      type = "request_headers"
+      request_headers = {
+        "X-Example-Global" = { operation = "set", value = "1" }
+      }
+    }
+  ]
 }
