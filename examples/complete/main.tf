@@ -153,4 +153,18 @@ module "zone" {
       ]
     }
   ]
+
+  bot_management = {
+    content_bots_protection = "block"
+  }
+
+  ip_access_rules = [
+    {
+      key    = "block-testnet"
+      mode   = "block"
+      target = "ip"
+      value  = "192.0.2.0/24"
+      notes  = "TEST-NET-1"
+    }
+  ]
 }

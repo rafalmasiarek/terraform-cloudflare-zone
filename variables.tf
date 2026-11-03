@@ -1564,3 +1564,205 @@ variable "lists" {
     error_message = "lists: every item must define `ip`."
   }
 }
+
+variable "bot_management" {
+  type = object({
+    fight_mode                      = optional(bool)
+    sbfm_definitely_automated       = optional(string) # allow | block | managed_challenge
+    sbfm_likely_automated           = optional(string) # allow | block | managed_challenge
+    sbfm_static_resource_protection = optional(bool)
+    sbfm_verified_bots              = optional(string) # allow | block
+    content_bots_protection         = optional(string) # block | disabled
+    crawler_protection              = optional(string) # enabled | disabled
+    ai_bots_protection              = optional(string) # block | disabled | only_on_ad_pages
+    ai_training                     = optional(string) # disabled | disallow | block | only_on_ad_pages
+    ai_user                         = optional(string) # disabled | block | only_on_ad_pages
+    aisearch                        = optional(string) # disabled | block | only_on_ad_pages
+    bm_cookie_enabled               = optional(bool)
+    enable_js                       = optional(bool)
+    is_robots_txt_managed           = optional(bool)
+    optimize_wordpress              = optional(bool)
+    cf_robots_variant               = optional(string) # off | policy_only
+    jsd_api_results_enabled         = optional(bool)
+    suppress_session_score          = optional(bool)
+  })
+  default     = null
+  description = <<-EOT
+    Zone Bot Management settings (`cloudflare_bot_management`).
+    Base "Bots" is available on all plans. The `sbfm_*` fields are Super Bot
+    Fight Mode and require Pro plan or higher; full Bot Management is
+    Enterprise. See https://developers.cloudflare.com/bots/.
+
+    Example:
+      bot_management = {
+        content_bots_protection = "block"
+      }
+  EOT
+
+  validation {
+    condition = var.bot_management == null ? true : alltrue([
+      try(var.bot_management.sbfm_definitely_automated, null) == null ? true : contains(["allow", "block", "managed_challenge"], var.bot_management.sbfm_definitely_automated),
+      try(var.bot_management.sbfm_likely_automated, null) == null ? true : contains(["allow", "block", "managed_challenge"], var.bot_management.sbfm_likely_automated),
+      try(var.bot_management.sbfm_verified_bots, null) == null ? true : contains(["allow", "block"], var.bot_management.sbfm_verified_bots),
+      try(var.bot_management.content_bots_protection, null) == null ? true : contains(["block", "disabled"], var.bot_management.content_bots_protection),
+      try(var.bot_management.crawler_protection, null) == null ? true : contains(["enabled", "disabled"], var.bot_management.crawler_protection),
+      try(var.bot_management.ai_bots_protection, null) == null ? true : contains(["block", "disabled", "only_on_ad_pages"], var.bot_management.ai_bots_protection),
+      try(var.bot_management.ai_training, null) == null ? true : contains(["disabled", "disallow", "block", "only_on_ad_pages"], var.bot_management.ai_training),
+      try(var.bot_management.ai_user, null) == null ? true : contains(["disabled", "block", "only_on_ad_pages"], var.bot_management.ai_user),
+      try(var.bot_management.aisearch, null) == null ? true : contains(["disabled", "block", "only_on_ad_pages"], var.bot_management.aisearch),
+      try(var.bot_management.cf_robots_variant, null) == null ? true : contains(["off", "policy_only"], var.bot_management.cf_robots_variant),
+    ])
+    error_message = "bot_management: one or more fields have an unsupported value. See the provider docs for cloudflare_bot_management for the allowed values of each field."
+  }
+}
+
+variable "ip_access_rules" {
+  type = list(object({
+    key    = string
+    mode   = string # block | challenge | whitelist | js_challenge | managed_challenge
+    target = string # ip | ip6 | ip_range | asn (country is Enterprise-only, not supported here)
+    value  = string
+    notes  = optional(string)
+  }))
+  default     = []
+  description = <<-EOT
+    IP Access Rules (`cloudflare_access_rule`), one rule per item.
+    Available to all customers; country targeting is Enterprise-only and
+    not exposed here.
+
+    Example:
+      ip_access_rules = [
+        {
+          key    = "block-attacker"
+          mode   = "block"
+          target = "ip"
+          value  = "203.0.113.10"
+          notes  = "attacker from incident 2026-10"
+        }
+      ]
+  EOT
+
+  validation {
+    condition     = length(var.ip_access_rules) == length(distinct([for r in var.ip_access_rules : r.key]))
+    error_message = "ip_access_rules: key must be unique."
+  }
+
+  validation {
+    condition = alltrue([
+      for r in var.ip_access_rules :
+      contains(["block", "challenge", "whitelist", "js_challenge", "managed_challenge"], r.mode) &&
+      contains(["ip", "ip6", "ip_range", "asn"], r.target)
+    ])
+    error_message = "ip_access_rules: mode must be one of block, challenge, whitelist, js_challenge, managed_challenge; target must be one of ip, ip6, ip_range, asn."
+  }
+}
+
+variable "user_agent_blocking_rules" {
+  type = list(object({
+    key         = string
+    mode        = string # block | challenge | whitelist | js_challenge | managed_challenge
+    value       = string # exact user agent string to match
+    description = optional(string)
+    paused      = optional(bool)
+  }))
+  default     = []
+  description = <<-EOT
+    User Agent Blocking rules (`cloudflare_user_agent_blocking_rule`).
+    Available on all plans. Each item is one resource matching a single
+    exact user-agent string — the provider's `configuration.target` for
+    this resource only accepts "ua", there is no multi-condition list.
+
+    Example:
+      user_agent_blocking_rules = [
+        {
+          key   = "block-old-bot"
+          mode  = "block"
+          value = "BadBot/1.0"
+        }
+      ]
+  EOT
+
+  validation {
+    condition     = length(var.user_agent_blocking_rules) == length(distinct([for r in var.user_agent_blocking_rules : r.key]))
+    error_message = "user_agent_blocking_rules: key must be unique."
+  }
+
+  validation {
+    condition = alltrue([
+      for r in var.user_agent_blocking_rules :
+      contains(["block", "challenge", "whitelist", "js_challenge", "managed_challenge"], r.mode) &&
+      length(trimspace(r.value)) > 0
+    ])
+    error_message = "user_agent_blocking_rules: mode must be one of block, challenge, whitelist, js_challenge, managed_challenge; value must be non-empty."
+  }
+}
+
+variable "origin_ca_certificates" {
+  type = map(object({
+    csr                = string
+    hostnames          = list(string)
+    request_type       = string           # origin-rsa | origin-ecc | keyless-certificate
+    requested_validity = optional(number) # 7 | 30 | 90 | 365 | 730 | 1095 | 5475 (days)
+  }))
+  default     = null
+  description = <<-EOT
+    Origin CA certificates (`cloudflare_origin_ca_certificate`), keyed by
+    your own key. Available on all plans. This resource is account-scoped
+    (not tied to this module's zone) — generate the CSR off-Terraform
+    (e.g. `openssl req -new -newkey rsa:2048 -nodes`) and pass it here.
+
+    `request_type` selects the certificate's signature algorithm:
+    "origin-rsa", "origin-ecc", or "keyless-certificate" (for Keyless SSL).
+    `requested_validity` (days) must be one of 7, 30, 90, 365, 730, 1095,
+    5475 when set.
+
+    Example:
+      origin_ca_certificates = {
+        origin = {
+          csr          = file("certs/origin.csr")
+          hostnames    = ["example.com", "*.example.com"]
+          request_type = "origin-rsa"
+        }
+      }
+  EOT
+
+  validation {
+    condition = var.origin_ca_certificates == null ? true : alltrue([
+      for k, v in var.origin_ca_certificates :
+      length(trimspace(v.csr)) > 0 &&
+      length(v.hostnames) > 0 &&
+      contains(["origin-rsa", "origin-ecc", "keyless-certificate"], v.request_type) &&
+      (try(v.requested_validity, null) == null ? true : contains([7, 30, 90, 365, 730, 1095, 5475], v.requested_validity))
+    ])
+    error_message = "origin_ca_certificates: each entry needs a non-empty csr, at least one hostname, request_type in origin-rsa|origin-ecc|keyless-certificate, and (if set) requested_validity in 7|30|90|365|730|1095|5475."
+  }
+}
+
+variable "aop_certificate" {
+  type = object({
+    certificate = string
+    private_key = string
+  })
+  default     = null
+  sensitive   = true
+  description = <<-EOT
+    Zone-level Authenticated Origin Pulls certificate
+    (`cloudflare_authenticated_origin_pulls_certificate`). Enable the zone
+    setting via the existing `authenticated_origin_pulls_settings` input.
+  EOT
+}
+
+variable "aop_hostname_certificates" {
+  type = map(object({
+    certificate = string
+    private_key = string
+  }))
+  default     = null
+  sensitive   = true
+  description = <<-EOT
+    Per-hostname Authenticated Origin Pulls certificates
+    (`cloudflare_authenticated_origin_pulls_hostname_certificate`), keyed
+    by your own key. The target hostname is derived by Cloudflare from the
+    certificate's own subject/SAN, not a separate argument.
+  EOT
+}
