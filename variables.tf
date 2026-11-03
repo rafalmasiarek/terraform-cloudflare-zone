@@ -1155,3 +1155,87 @@ variable "worker_hostnames" {
     error_message = "Each worker_hostnames entry must define a non-empty hostname and script."
   }
 }
+
+variable "url_normalization" {
+  type = object({
+    scope = string
+    type  = string
+  })
+  default     = null
+  description = <<-EOT
+    URL normalization settings, managed with
+    `cloudflare_url_normalization_settings`. Available on all plans:
+    https://developers.cloudflare.com/rules/normalization/
+
+    `scope`: "incoming" | "both" | "none"
+    `type`:  "cloudflare" | "rfc3986"
+
+    Example:
+      url_normalization = {
+        scope = "incoming"
+        type  = "cloudflare"
+      }
+  EOT
+
+  validation {
+    condition     = var.url_normalization == null ? true : contains(["incoming", "both", "none"], var.url_normalization.scope)
+    error_message = "url_normalization.scope must be one of: incoming, both, none."
+  }
+
+  validation {
+    condition     = var.url_normalization == null ? true : contains(["cloudflare", "rfc3986"], var.url_normalization.type)
+    error_message = "url_normalization.type must be one of: cloudflare, rfc3986."
+  }
+}
+
+variable "lists" {
+  type = list(object({
+    key         = string
+    kind        = string # "ip" (IP list). Hostname/ASN/redirect lists are not exposed here.
+    name        = string
+    description = optional(string)
+    items = optional(list(object({
+      ip      = optional(string)
+      comment = optional(string)
+    })))
+  }))
+  default     = []
+  description = <<-EOT
+    Custom lists (`cloudflare_list`) — groups of IPs referenceable in rule
+    expressions, e.g. `ip.src in cf.list["my-list"]`.
+    Free plan limits: 1 custom list, 10,000 total items, IP lists only
+    (https://developers.cloudflare.com/waf/tools/lists/).
+
+    Only `kind = "ip"` is supported by this input. Hostname/ASN/redirect
+    lists exist in the Cloudflare API but are not exposed here.
+
+    Example:
+      lists = [
+        {
+          key  = "office"
+          kind = "ip"
+          name = "office"
+          items = [
+            { ip = "203.0.113.10", comment = "office" }
+          ]
+        }
+      ]
+  EOT
+
+  validation {
+    condition     = length(var.lists) == length(distinct([for l in var.lists : l.key]))
+    error_message = "lists: key must be unique."
+  }
+
+  validation {
+    condition     = alltrue([for l in var.lists : l.kind == "ip"])
+    error_message = "lists: only kind \"ip\" (IP lists) is supported by this input."
+  }
+
+  validation {
+    condition = alltrue(flatten([
+      for l in var.lists : [for item in coalesce(try(l.items, null), []) : item.ip != null]
+    ]))
+    error_message = "lists: every item must define `ip`."
+  }
+}

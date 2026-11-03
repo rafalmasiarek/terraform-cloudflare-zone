@@ -109,4 +109,15 @@ module "zone" {
       ]
     }
   ]
+
+  lists = [
+    {
+      key  = "example-net"
+      kind = "ip"
+      name = "example-net"
+      items = [
+        { ip = "192.0.2.1", comment = "TEST-NET-1 example" }
+      ]
+    }
+  ]
 }
