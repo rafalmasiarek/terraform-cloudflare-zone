@@ -6,9 +6,10 @@ locals {
     flatten([
       for c in coalesce(try(var.transform_rules.presets.cors, null), []) : [
         for i, p in c.paths : {
-          key   = "preset-cors-${c.key}-${i}"
-          type  = "response_headers"
-          match = { path_prefix = p }
+          key         = "preset-cors-${c.key}-${i}"
+          description = "cors-${c.key}"
+          type        = "response_headers"
+          match       = { path_prefix = p }
           response_headers = merge(
             { "Access-Control-Allow-Origin" = { operation = "set", value = c.allow_origin } },
             try(c.allow_methods, null) != null ? { "Access-Control-Allow-Methods" = { operation = "set", value = join(", ", c.allow_methods) } } : {},
@@ -18,8 +19,9 @@ locals {
       ]
     ]),
     try(var.transform_rules.presets.hsts, null) == null ? [] : [{
-      key  = "preset-hsts"
-      type = "response_headers"
+      key         = "preset-hsts"
+      description = "hsts"
+      type        = "response_headers"
       response_headers = {
         "Strict-Transport-Security" = {
           operation = "set"
@@ -28,8 +30,9 @@ locals {
       }
     }],
     try(var.transform_rules.presets.security_headers, null) == null ? [] : [{
-      key  = "preset-security-headers"
-      type = "response_headers"
+      key         = "preset-security-headers"
+      description = "security-headers"
+      type        = "response_headers"
       response_headers = merge(
         coalesce(try(var.transform_rules.presets.security_headers.nosniff, null), true) ? { "X-Content-Type-Options" = { operation = "set", value = "nosniff" } } : {},
         try(var.transform_rules.presets.security_headers.x_frame_options, null) != null ? { "X-Frame-Options" = { operation = "set", value = var.transform_rules.presets.security_headers.x_frame_options } } : {},
@@ -39,9 +42,10 @@ locals {
     }],
     [
       for b in coalesce(try(var.transform_rules.presets.browser_cache_static, null), []) : {
-        key   = "preset-browser-cache-static-${b.key}"
-        type  = "response_headers"
-        match = { path_prefix = b.path_prefix }
+        key         = "preset-browser-cache-static-${b.key}"
+        description = "browser-cache-static-${b.key}"
+        type        = "response_headers"
+        match       = { path_prefix = b.path_prefix }
         response_headers = {
           "Cache-Control" = {
             operation = "set"
