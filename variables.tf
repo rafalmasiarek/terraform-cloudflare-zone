@@ -783,6 +783,100 @@ variable "transform_rules" {
   }
 }
 
+variable "preset_cors" {
+  type = object({
+    paths         = list(string)
+    allow_origin  = string
+    allow_methods = optional(list(string))
+    allow_headers = optional(list(string))
+  })
+  default     = null
+  description = <<-EOT
+    Preset: CORS response headers. One ruleset per path.
+    `allow_methods`/`allow_headers` add preflight headers when set.
+    Example:
+      preset_cors = {
+        paths        = ["/assets/img/", "/fonts/"]
+        allow_origin = "*"
+      }
+  EOT
+
+  validation {
+    condition     = var.preset_cors == null ? true : length(var.preset_cors.paths) > 0
+    error_message = "preset_cors: paths must not be empty."
+  }
+}
+
+variable "preset_hsts" {
+  type = object({
+    max_age            = number
+    include_subdomains = optional(bool)
+    preload            = optional(bool)
+  })
+  default     = null
+  description = <<-EOT
+    Preset: Strict-Transport-Security response header (global).
+    Example:
+      preset_hsts = {
+        max_age            = 31536000
+        include_subdomains = true
+      }
+  EOT
+
+  validation {
+    condition     = var.preset_hsts == null ? true : var.preset_hsts.max_age > 0
+    error_message = "preset_hsts: max_age must be > 0."
+  }
+}
+
+variable "preset_security_headers" {
+  type = object({
+    nosniff                 = optional(bool)
+    x_frame_options         = optional(string)
+    referrer_policy         = optional(string)
+    content_security_policy = optional(string)
+  })
+  default     = null
+  description = <<-EOT
+    Preset: common security response headers (global).
+      * `nosniff` (default true) — X-Content-Type-Options: nosniff
+      * `x_frame_options`        — e.g. "DENY" or "SAMEORIGIN"
+      * `referrer_policy`        — e.g. "strict-origin-when-cross-origin"
+      * `content_security_policy` — full CSP string
+    Example:
+      preset_security_headers = {
+        x_frame_options = "DENY"
+        referrer_policy = "strict-origin-when-cross-origin"
+      }
+  EOT
+}
+
+variable "preset_browser_cache_static" {
+  type = object({
+    path_prefix = string
+    max_age     = number
+    immutable   = optional(bool)
+  })
+  default     = null
+  description = <<-EOT
+    Preset: browser-facing Cache-Control for a path prefix.
+    WARNING: this sets the response header for browsers only. It does NOT
+    change Cloudflare edge caching — for that use the `rulesets` input with
+    cache rules (https://developers.cloudflare.com/rules/transform/response-header-modification/).
+    Example:
+      preset_browser_cache_static = {
+        path_prefix = "/assets/"
+        max_age     = 31536000
+        immutable   = true
+      }
+  EOT
+
+  validation {
+    condition     = var.preset_browser_cache_static == null ? true : var.preset_browser_cache_static.max_age > 0
+    error_message = "preset_browser_cache_static: max_age must be > 0."
+  }
+}
+
 variable "universal_ssl_setting" {
   type = object({
     enabled = optional(bool)

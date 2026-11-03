@@ -150,4 +150,9 @@ module "zone" {
       }
     }
   ]
+
+  preset_hsts = {
+    max_age            = 31536000
+    include_subdomains = true
+  }
 }

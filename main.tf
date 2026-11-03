@@ -2,8 +2,56 @@ locals {
   zone_id        = cloudflare_zone.this.id
   global_comment = trimspace(var.comment) != "" ? var.comment : null
 
+  presets_expanded = flatten([
+    var.preset_cors == null ? [] : [
+      for i, p in var.preset_cors.paths : {
+        key   = "preset-cors-${i}"
+        type  = "response_headers"
+        match = { path_prefix = p }
+        response_headers = merge(
+          { "Access-Control-Allow-Origin" = { operation = "set", value = var.preset_cors.allow_origin } },
+          try(var.preset_cors.allow_methods, null) != null ? { "Access-Control-Allow-Methods" = { operation = "set", value = join(", ", var.preset_cors.allow_methods) } } : {},
+          try(var.preset_cors.allow_headers, null) != null ? { "Access-Control-Allow-Headers" = { operation = "set", value = join(", ", var.preset_cors.allow_headers) } } : {},
+        )
+      }
+    ],
+    var.preset_hsts == null ? [] : [{
+      key  = "preset-hsts"
+      type = "response_headers"
+      response_headers = {
+        "Strict-Transport-Security" = {
+          operation = "set"
+          value     = "max-age=${var.preset_hsts.max_age}${coalesce(try(var.preset_hsts.include_subdomains, null), false) ? "; includeSubDomains" : ""}${coalesce(try(var.preset_hsts.preload, null), false) ? "; preload" : ""}"
+        }
+      }
+    }],
+    var.preset_security_headers == null ? [] : [{
+      key  = "preset-security-headers"
+      type = "response_headers"
+      response_headers = merge(
+        coalesce(try(var.preset_security_headers.nosniff, null), true) ? { "X-Content-Type-Options" = { operation = "set", value = "nosniff" } } : {},
+        try(var.preset_security_headers.x_frame_options, null) != null ? { "X-Frame-Options" = { operation = "set", value = var.preset_security_headers.x_frame_options } } : {},
+        try(var.preset_security_headers.referrer_policy, null) != null ? { "Referrer-Policy" = { operation = "set", value = var.preset_security_headers.referrer_policy } } : {},
+        try(var.preset_security_headers.content_security_policy, null) != null ? { "Content-Security-Policy" = { operation = "set", value = var.preset_security_headers.content_security_policy } } : {},
+      )
+    }],
+    var.preset_browser_cache_static == null ? [] : [{
+      key   = "preset-browser-cache-static"
+      type  = "response_headers"
+      match = { path_prefix = var.preset_browser_cache_static.path_prefix }
+      response_headers = {
+        "Cache-Control" = {
+          operation = "set"
+          value     = "public, max-age=${var.preset_browser_cache_static.max_age}${coalesce(try(var.preset_browser_cache_static.immutable, null), false) ? ", immutable" : ""}"
+        }
+      }
+    }]
+  ])
+
+  all_transform_rules = concat(var.transform_rules, local.presets_expanded)
+
   tr_conditions = {
-    for tr in var.transform_rules : tr.key => compact(flatten([
+    for tr in local.all_transform_rules : tr.key => compact(flatten([
       for m in [try(tr.match, null)] : m == null ? [] : compact([
         try(m.path, null) != null ? "http.request.uri.path eq \"${m.path}\"" : null,
         try(m.path_prefix, null) != null ? "starts_with(http.request.uri.path, \"${m.path_prefix}\")" : null,
@@ -25,7 +73,7 @@ locals {
   }
 
   transform_rules_expanded = [
-    for tr in var.transform_rules : {
+    for tr in local.all_transform_rules : {
       key         = "tr-${tr.key}"
       name        = coalesce(try(tr.name, null), "Transform rule ${tr.key}")
       description = try(tr.description, null)
