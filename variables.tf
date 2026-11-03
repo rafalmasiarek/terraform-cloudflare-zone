@@ -832,6 +832,16 @@ variable "transform_rules" {
   }
 
   validation {
+    # All preset-generated keys start with "preset-" (see presets_expanded
+    # in main.tf); reserving that prefix for user-authored rule keys keeps
+    # the two namespaces from ever colliding when concatenated.
+    condition = alltrue([
+      for tr in coalesce(var.transform_rules.rules, []) : !startswith(tr.key, "preset-")
+    ])
+    error_message = "transform_rules.rules: key must not start with \"preset-\" — that prefix is reserved for generated preset rules."
+  }
+
+  validation {
     condition = alltrue([
       for tr in coalesce(var.transform_rules.rules, []) :
       try(tr.match, null) == null ||
@@ -1453,8 +1463,7 @@ variable "managed_transforms" {
     `cloudflare_managed_transforms`.
 
     List the transform IDs to enable, per direction. Every listed ID is
-    applied with `enabled = true`; removing an ID from the list stops
-    managing that transform.
+    applied with `enabled = true`.
 
     Valid IDs (see "Available Managed Transforms" in the docs):
       request  e.g. "add_visitor_location_headers"
@@ -1465,6 +1474,11 @@ variable "managed_transforms" {
       * Some transforms are plan-gated (e.g. Exposed-Credential-Check
         response headers require Pro/Enterprise) — check the availability
         column of the reference table.
+      * Removing an ID from a direction's list **actively disables** that
+        transform (the provider sends `enabled = false` for IDs missing
+        from the new list) — it does not just stop managing it. Omitting
+        a whole direction (leaving `request`/`response` unset) is
+        different: that direction is left untouched entirely.
 
     Example:
       managed_transforms = {

@@ -1,6 +1,12 @@
 resource "cloudflare_origin_ca_certificate" "this" {
   for_each = coalesce(var.origin_ca_certificates, {})
 
+  # This resource has no zone_id (it's account-scoped), so Terraform has no
+  # inferred link to cloudflare_zone.this. Origin CA requires hostnames to
+  # belong to zones already on the account, so if this zone is created in
+  # the same apply, the certificate must wait for it.
+  depends_on = [cloudflare_zone.this]
+
   csr                = each.value.csr
   hostnames          = each.value.hostnames
   request_type       = each.value.request_type
