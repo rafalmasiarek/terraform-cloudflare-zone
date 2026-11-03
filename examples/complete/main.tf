@@ -109,4 +109,8 @@ module "zone" {
       ]
     }
   ]
+
+  managed_transforms = {
+    response = ["remove_x-powered-by_header"]
+  }
 }
