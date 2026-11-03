@@ -159,4 +159,15 @@ module "zone" {
   managed_transforms = {
     response = ["remove_x-powered-by_header"]
   }
+
+  lists = [
+    {
+      key  = "example-net"
+      kind = "ip"
+      name = "example-net"
+      items = [
+        { ip = "192.0.2.1", comment = "TEST-NET-1 example" }
+      ]
+    }
+  ]
 }

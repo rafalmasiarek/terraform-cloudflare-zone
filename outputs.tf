@@ -136,3 +136,8 @@ output "worker_hostname_ids" {
   value       = { for k, v in cloudflare_workers_custom_domain.this : k => v.id }
   description = "The Workers Custom Domain IDs keyed by hostname."
 }
+
+output "list_ids" {
+  value       = { for k, v in cloudflare_list.this : k => v.id }
+  description = "The custom list IDs keyed by the module's managed list key."
+}
