@@ -176,6 +176,34 @@ variable "records" {
     ])
     error_message = "The priority must not be null for each raw record of type \"MX\"."
   }
+
+  validation {
+    condition = alltrue([
+      for i in var.records : try(i.type != "A" || provider::netutils::ip_family(i.value) == "ipv4", true)
+    ])
+    error_message = "A raw record of type \"A\" must have a value that is a valid IPv4 address."
+  }
+
+  validation {
+    condition = alltrue([
+      for i in var.records : try(i.type != "AAAA" || provider::netutils::ip_family(i.value) == "ipv6", true)
+    ])
+    error_message = "A raw record of type \"AAAA\" must have a value that is a valid IPv6 address."
+  }
+
+  validation {
+    condition = alltrue([
+      for i in var.records : try(!contains(["CNAME", "MX", "NS"], i.type) || provider::netutils::fqdn_validate(i.value), true)
+    ])
+    error_message = "A raw record of type \"CNAME\", \"MX\", or \"NS\" must have a value that is a valid FQDN."
+  }
+
+  validation {
+    condition = alltrue([
+      for i in var.records : try(i.type != "CAA" || provider::netutils::caa_record_validate(tonumber(i.data.flags), i.data.tag), true)
+    ])
+    error_message = "A raw record of type \"CAA\" must set data.flags (0-255) and data.tag (\"issue\", \"issuewild\", or \"iodef\")."
+  }
 }
 
 variable "record" {
@@ -263,6 +291,26 @@ variable "record" {
   validation {
     condition     = var.record == null ? true : try(var.record.type != "MX" || var.record.priority != null, true)
     error_message = "record: priority must not be null when type is \"MX\"."
+  }
+
+  validation {
+    condition     = var.record == null ? true : try(var.record.type != "A" || provider::netutils::ip_family(var.record.value) == "ipv4", true)
+    error_message = "record: type \"A\" must have a value that is a valid IPv4 address."
+  }
+
+  validation {
+    condition     = var.record == null ? true : try(var.record.type != "AAAA" || provider::netutils::ip_family(var.record.value) == "ipv6", true)
+    error_message = "record: type \"AAAA\" must have a value that is a valid IPv6 address."
+  }
+
+  validation {
+    condition     = var.record == null ? true : try(!contains(["CNAME", "MX", "NS"], var.record.type) || provider::netutils::fqdn_validate(var.record.value), true)
+    error_message = "record: type \"CNAME\", \"MX\", or \"NS\" must have a value that is a valid FQDN."
+  }
+
+  validation {
+    condition     = var.record == null ? true : try(var.record.type != "CAA" || provider::netutils::caa_record_validate(tonumber(var.record.data.flags), var.record.data.tag), true)
+    error_message = "record: type \"CAA\" must set data.flags (0-255) and data.tag (\"issue\", \"issuewild\", or \"iodef\")."
   }
 }
 
