@@ -1,4 +1,5 @@
-<!-- BEGIN_TF_DOCS -->
+## Terraform Reference
+
 
 
 ### Requirements
@@ -315,4 +316,3 @@ module "zone" {
   ]
 }
 ```
-<!-- END_TF_DOCS -->
