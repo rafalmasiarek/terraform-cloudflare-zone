@@ -27,7 +27,7 @@ jobs:
       -
         name: Git Auto-Commit
         if: steps.update.outputs.create_commit == 'true'
-        uses: stefanzweifel/git-auto-commit-action@v4
+        uses: stefanzweifel/git-auto-commit-action@v7
         with:
           commit_message: Auto update default terraform version
           commit_options: '--no-verify --signoff'
