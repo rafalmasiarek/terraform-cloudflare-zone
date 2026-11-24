@@ -52,7 +52,6 @@ resource "cloudflare_zone_dns_settings" "this" {
   zone_id = local.zone_id
 
   flatten_all_cnames  = try(var.zone_dns_settings.flatten_all_cnames, null)
-  foundation_dns      = try(var.zone_dns_settings.foundation_dns, null)
   multi_provider      = try(var.zone_dns_settings.multi_provider, null)
   secondary_overrides = try(var.zone_dns_settings.secondary_overrides, null)
   ns_ttl              = try(var.zone_dns_settings.ns_ttl, null)
