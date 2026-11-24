@@ -1128,7 +1128,6 @@ variable "zone_cache_variants" {
 variable "zone_dns_settings" {
   type = object({
     flatten_all_cnames  = optional(bool)
-    foundation_dns      = optional(bool)
     multi_provider      = optional(bool)
     secondary_overrides = optional(bool)
     ns_ttl              = optional(number)
