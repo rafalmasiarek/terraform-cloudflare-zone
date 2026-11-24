@@ -305,6 +305,19 @@ locals {
     for record in local.all_records_normalized : record.record_name => record
   }
 
+  # Names where local.all_records_normalized declares a CNAME alongside
+  # any other record type - invalid per RFC 1034 (a CNAME must be the
+  # only record at its name). Computed once here; each record resource
+  # instance below asserts it isn't one of them. Scoped to the records
+  # list (plus the module's own generated MX/SPF/DMARC/TLSRPT/DKIM
+  # helpers) - var.record is a deliberately independent single-record
+  # attachment (often to a zone this module doesn't fully own) and isn't
+  # cross-checked against this set.
+  cname_conflicts = provider::netutils::dns_cname_conflicts([
+    for record in local.all_records_normalized : { name = record.name, type = record.type }
+  ])
+  cname_conflict_names = toset([for c in local.cname_conflicts : c.name])
+
   # Same name/value normalization as all_records_normalized above, applied
   # directly to var.record instead of routing a single object through the
   # list/map pipeline built for an arbitrary number of records.
@@ -377,6 +390,13 @@ resource "cloudflare_dns_record" "this" {
   priority = try(each.value.priority, null)
   proxied  = coalesce(try(each.value.proxied, null), false)
   ttl      = coalesce(try(each.value.ttl, null), 1)
+
+  lifecycle {
+    precondition {
+      condition     = !contains(local.cname_conflict_names, each.value.name)
+      error_message = "DNS name \"${each.value.name}\" has a CNAME record alongside another record type - a CNAME must be the only record at its name (RFC 1034)."
+    }
+  }
 }
 
 resource "cloudflare_dns_record" "single" {
