@@ -5,7 +5,7 @@
 ### Requirements
 
 | Name | Version |
-|------|---------|
+| ---- | ------- |
 | <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.5.0 |
 | <a name="requirement_cloudflare"></a> [cloudflare](#requirement\_cloudflare) | >= 5.28.1, < 6.0.0 |
 
@@ -16,7 +16,7 @@ No modules.
 ### Resources
 
 | Name | Type |
-|------|------|
+| ---- | ---- |
 | [cloudflare_access_rule.this](https://registry.terraform.io/providers/cloudflare/cloudflare/latest/docs/resources/access_rule) | resource |
 | [cloudflare_authenticated_origin_pulls.this](https://registry.terraform.io/providers/cloudflare/cloudflare/latest/docs/resources/authenticated_origin_pulls) | resource |
 | [cloudflare_authenticated_origin_pulls_certificate.this](https://registry.terraform.io/providers/cloudflare/cloudflare/latest/docs/resources/authenticated_origin_pulls_certificate) | resource |
@@ -55,7 +55,7 @@ No modules.
 ### Inputs
 
 | Name | Description | Type | Default | Required |
-|------|-------------|------|---------|:--------:|
+| ---- | ----------- | ---- | ------- | :------: |
 | <a name="input_account_id"></a> [account\_id](#input\_account\_id) | Account ID to manage the zone resource in. You can get more information on how to find `account_id` at [this page](https://developers.cloudflare.com/fundamentals/get-started/basic-tasks/find-account-and-zone-ids/). | `string` | n/a | yes |
 | <a name="input_aop_certificate"></a> [aop\_certificate](#input\_aop\_certificate) | Zone-level Authenticated Origin Pulls certificate<br/>(`cloudflare_authenticated_origin_pulls_certificate`). Enable the zone<br/>setting via the existing `authenticated_origin_pulls_settings` input. | <pre>object({<br/>    certificate = string<br/>    private_key = string<br/>  })</pre> | `null` | no |
 | <a name="input_aop_hostname_certificates"></a> [aop\_hostname\_certificates](#input\_aop\_hostname\_certificates) | Per-hostname Authenticated Origin Pulls certificates, keyed by your own<br/>key. Uploading a certificate alone does not activate per-hostname AOP —<br/>Cloudflare requires a separate association step, so each entry both<br/>uploads the certificate (`cloudflare_authenticated_origin_pulls_hostname_certificate`)<br/>and associates + enables it for `hostname`<br/>(`cloudflare_authenticated_origin_pulls`).<br/><br/>Example:<br/>  aop\_hostname\_certificates = {<br/>    api = {<br/>      certificate = file("certs/api.pem")<br/>      private\_key = file("certs/api.key")<br/>      hostname    = "api.example.com"<br/>    }<br/>  } | <pre>map(object({<br/>    certificate = string<br/>    private_key = string<br/>    hostname    = string<br/>    enabled     = optional(bool, true)<br/>  }))</pre> | `null` | no |
@@ -93,7 +93,7 @@ No modules.
 | <a name="input_zone"></a> [zone](#input\_zone) | The DNS zone name which will be added, e.g. example.com. | `string` | n/a | yes |
 | <a name="input_zone_cache_reserve"></a> [zone\_cache\_reserve](#input\_zone\_cache\_reserve) | Cache Reserve setting for the zone, managed with `cloudflare_zone_cache_reserve`.<br/><br/>Example:<pre>hcl<br/>zone_cache_reserve = {<br/>  value = "on"<br/>}</pre> | <pre>object({<br/>    value = optional(string)<br/>  })</pre> | `null` | no |
 | <a name="input_zone_cache_variants"></a> [zone\_cache\_variants](#input\_zone\_cache\_variants) | Cache Variants setting for the zone, managed with `cloudflare_zone_cache_variants`.<br/><br/>Each key lists the alternate MIME types Cloudflare may serve instead of the<br/>source image format, when the client's Accept header allows it.<br/><br/>Example:<pre>hcl<br/>zone_cache_variants = {<br/>  value = {<br/>    webp = ["image/jpeg", "image/avif"]<br/>  }<br/>}</pre> | <pre>object({<br/>    value = optional(object({<br/>      avif = optional(list(string))<br/>      bmp  = optional(list(string))<br/>      gif  = optional(list(string))<br/>      jp2  = optional(list(string))<br/>      jpeg = optional(list(string))<br/>      jpg  = optional(list(string))<br/>      jpg2 = optional(list(string))<br/>      png  = optional(list(string))<br/>      tif  = optional(list(string))<br/>      tiff = optional(list(string))<br/>      webp = optional(list(string))<br/>    }))<br/>  })</pre> | `null` | no |
-| <a name="input_zone_dns_settings"></a> [zone\_dns\_settings](#input\_zone\_dns\_settings) | DNS settings for the zone, managed with `cloudflare_zone_dns_settings`.<br/><br/>Example:<pre>hcl<br/>zone_dns_settings = {<br/>  flatten_all_cnames = true<br/>  zone_mode          = "dns_only"<br/>}</pre> | <pre>object({<br/>    flatten_all_cnames  = optional(bool)<br/>    foundation_dns      = optional(bool)<br/>    multi_provider      = optional(bool)<br/>    secondary_overrides = optional(bool)<br/>    ns_ttl              = optional(number)<br/>    zone_mode           = optional(string)<br/><br/>    internal_dns = optional(object({<br/>      reference_zone_id = string<br/>    }))<br/><br/>    nameservers = optional(object({<br/>      type              = string<br/>      nameserver_set_id = optional(string)<br/>      ns_set            = optional(number)<br/>    }))<br/><br/>    soa = optional(object({<br/>      expire  = optional(number)<br/>      min_ttl = optional(number)<br/>      mname   = optional(string)<br/>      refresh = optional(number)<br/>      retry   = optional(number)<br/>      rname   = optional(string)<br/>      ttl     = optional(number)<br/>    }))<br/>  })</pre> | `null` | no |
+| <a name="input_zone_dns_settings"></a> [zone\_dns\_settings](#input\_zone\_dns\_settings) | DNS settings for the zone, managed with `cloudflare_zone_dns_settings`.<br/><br/>Example:<pre>hcl<br/>zone_dns_settings = {<br/>  flatten_all_cnames = true<br/>  zone_mode          = "dns_only"<br/>}</pre> | <pre>object({<br/>    flatten_all_cnames  = optional(bool)<br/>    multi_provider      = optional(bool)<br/>    secondary_overrides = optional(bool)<br/>    ns_ttl              = optional(number)<br/>    zone_mode           = optional(string)<br/><br/>    internal_dns = optional(object({<br/>      reference_zone_id = string<br/>    }))<br/><br/>    nameservers = optional(object({<br/>      type              = string<br/>      nameserver_set_id = optional(string)<br/>      ns_set            = optional(number)<br/>    }))<br/><br/>    soa = optional(object({<br/>      expire  = optional(number)<br/>      min_ttl = optional(number)<br/>      mname   = optional(string)<br/>      refresh = optional(number)<br/>      retry   = optional(number)<br/>      rname   = optional(string)<br/>      ttl     = optional(number)<br/>    }))<br/>  })</pre> | `null` | no |
 | <a name="input_zone_hold"></a> [zone\_hold](#input\_zone\_hold) | Zone Hold for the zone, managed with `cloudflare_zone_hold`.<br/><br/>Blocks the creation and activation of any zone using this zone's hostname.<br/>Declaring this object enables the hold; omitting it (the default) leaves no<br/>hold in place. Scheduling a temporary release via `hold_after` is not<br/>supported by this helper.<br/><br/>Example:<pre>hcl<br/>zone_hold = {<br/>  include_subdomains = true<br/>}</pre> | <pre>object({<br/>    include_subdomains = optional(bool, false)<br/>  })</pre> | `null` | no |
 | <a name="input_zone_lockdowns"></a> [zone\_lockdowns](#input\_zone\_lockdowns) | Zone Lockdown rules, managed with `cloudflare_zone_lockdown`.<br/><br/>Restricts access to the listed `urls` to the IPs or IP ranges declared in<br/>`configurations`.<br/><br/>Example:<pre>hcl<br/>zone_lockdowns = [<br/>  {<br/>    key  = "admin-panel"<br/>    urls = ["admin.example.com/*"]<br/><br/>    configurations = [<br/>      {<br/>        target = "ip"<br/>        value  = "198.51.100.4"<br/>      }<br/>    ]<br/>  }<br/>]</pre> | <pre>list(object({<br/>    key         = string<br/>    urls        = list(string)<br/>    description = optional(string)<br/>    paused      = optional(bool)<br/>    priority    = optional(number)<br/><br/>    configurations = list(object({<br/>      target = string<br/>      value  = string<br/>    }))<br/>  }))</pre> | `[]` | no |
 | <a name="input_zone_settings"></a> [zone\_settings](#input\_zone\_settings) | Zone settings applied with `cloudflare_zone_setting`.<br/><br/>Some settings use `value`, while others use `enabled`. | <pre>list(object({<br/>    setting_id = string<br/>    value      = optional(string)<br/>    enabled    = optional(bool)<br/>  }))</pre> | `[]` | no |
@@ -101,7 +101,7 @@ No modules.
 ### Outputs
 
 | Name | Description |
-|------|-------------|
+| ---- | ----------- |
 | <a name="output_algorithm"></a> [algorithm](#output\_algorithm) | Zone DNSSEC algorithm. |
 | <a name="output_aop_certificate_id"></a> [aop\_certificate\_id](#output\_aop\_certificate\_id) | The zone-level AOP certificate ID, when declared. |
 | <a name="output_aop_hostname_certificate_ids"></a> [aop\_hostname\_certificate\_ids](#output\_aop\_hostname\_certificate\_ids) | The per-hostname AOP certificate IDs keyed by the module's managed key. |
